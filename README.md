@@ -174,7 +174,7 @@ As melhorias planeadas para o projeto, por ordem de construção:
 - [x] **1. Relatório em PDF com o `fpdf2`**: com cabeçalho executivo de SOC, tabelas de métricas e alertas coloridos por nível de gravidade.
 - [x] **2. Deteção de *Password Spraying***: identificação de muitas contas diferentes atacadas a partir do mesmo IP com poucas tentativas por conta (Python puro).
 - [x] **3. Mais IDs de Evento do Windows**: deteção de criação de conta (4720), adição a grupos privilegiados (4728) e privilégios especiais (4672).
-- [ ] **4. Logons Fora de Horas**: identificação de acessos bem-sucedidos fora do expediente de trabalho habitual (horário normal configurável).
+- [x] **4. Logons Fora de Horas**: identificação de acessos bem-sucedidos fora do expediente de trabalho habitual (horário normal configurável).
 - [ ] **5. Exportação em JSON**: gerar o relatório em formato JSON estruturado para ingestão por SIEMs (Splunk, Elastic, Microsoft Sentinel).
 - [ ] **6. Enriquecimento de IPs com AbuseIPDB**: consulta automatizada à API gratuita para verificar a reputação e índice de confiança de maliciosidade do IP.
 - [ ] **7. Explicação por IA com Google Gemini**: resumo automático e geração de recomendações de mitigação e próximos passos via API do Gemini.

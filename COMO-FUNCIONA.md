@@ -55,7 +55,21 @@ Para apanhar ataques inteligentes que tentam contornar regras de bloqueio testan
 
 ---
 
-## 4. Eventos do Windows (Logs de Segurança)
+## 4. Deteção de Logons Fora de Horas (Horário Não Comercial)
+
+No dia a dia de um SOC, logins bem-sucedidos que ocorrem de madrugada ou ao fim de semana são fortes candidatos a atividade anómala (ex.: colaboradores a trabalhar em horários incomuns ou invasores a agir quando a equipa de TI está ausente).
+
+A ferramenta permite configurar o horário de expediente da organização:
+```python
+HORARIO_INICIO_EXPEDIENTE = 8                     # 08:00
+HORARIO_FIM_EXPEDIENTE = 19                       # 19:00
+CONSIDERAR_FIM_DE_SEMANA_FORA_DE_HORAS = True     # Sábados e Domingos
+```
+Quando um evento de logon com sucesso (**4624** no Windows ou **"Accepted password"** no Linux) ocorre fora desta janela, a ferramenta regista um alerta com o utilizador, o IP de origem, a hora e o motivo específico (ex.: *"Fora do Expediente (03:22)"* ou *"Fim de Semana (Sábado às 14:10)"*).
+
+---
+
+## 5. Eventos do Windows (Logs de Segurança)
 
 No Windows, os eventos de auditoria são identificados por códigos numéricos chamados **Event IDs**:
 
@@ -85,7 +99,7 @@ No Windows, os eventos de auditoria são identificados por códigos numéricos c
 
 ---
 
-## 5. Mensagens do Linux (`auth.log` / `secure`)
+## 6. Mensagens do Linux (`auth.log` / `secure`)
 
 No Linux, o serviço OpenSSH (`sshd`) regista os acessos em texto:
 
@@ -99,7 +113,7 @@ No Linux, o serviço OpenSSH (`sshd`) regista os acessos em texto:
 
 ---
 
-## 6. Deteção Automática do Formato
+## 7. Deteção Automática do Formato
 
 A ferramenta lê as primeiras linhas do ficheiro e adapta-se automaticamente:
 1. **Ficheiro Vazio**: se o ficheiro estiver sem dados, emite um aviso seguro e amigável sem provocar erros no programa.

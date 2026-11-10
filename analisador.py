@@ -40,6 +40,11 @@ LIMITE_CONTAS_PASSWORD_SPRAYING = 4        # Mínimo de contas distintas visadas
 MAX_TENTATIVAS_POR_CONTA_SPRAYING = 3      # Média máxima de tentativas por conta (evita bloqueio)
 JANELA_MINUTOS_PASSWORD_SPRAYING = 30      # Janela temporal para agrupar o ataque de spray
 
+# Regras de Logons Fora de Horas (Horário Normal de Expediente)
+HORARIO_INICIO_EXPEDIENTE = 8                     # Início do expediente (08:00)
+HORARIO_FIM_EXPEDIENTE = 19                       # Fim do expediente (19:00)
+CONSIDERAR_FIM_DE_SEMANA_FORA_DE_HORAS = True     # Sábados e domingos são considerados fora de horas
+
 # Ficheiros onde os relatórios serão guardados
 FICHEIRO_RELATORIO_TXT = "relatorio.txt"
 FICHEIRO_RELATORIO_PDF = "relatorio.pdf"
@@ -146,6 +151,29 @@ def converter_data_windows(texto_data):
     return None
 
 
+def verificar_fora_de_horas(data_dt):
+    """
+    Verifica se um evento com timestamp ocorreu fora do horário de expediente:
+    - Antes de HORARIO_INICIO_EXPEDIENTE ou a partir de HORARIO_FIM_EXPEDIENTE
+    - Ou em fins de semana se CONSIDERAR_FIM_DE_SEMANA_FORA_DE_HORAS for True.
+    Retorna (True, motivo) ou (False, None).
+    """
+    if not data_dt:
+        return False, None
+
+    dia_semana = data_dt.weekday()  # 0 = Segunda-feira ... 5 = Sábado, 6 = Domingo
+    hora = data_dt.hour
+
+    if CONSIDERAR_FIM_DE_SEMANA_FORA_DE_HORAS and dia_semana in (5, 6):
+        dia_nome = "Sábado" if dia_semana == 5 else "Domingo"
+        return True, f"Fim de Semana ({dia_nome} às {data_dt.strftime('%H:%M')})"
+
+    if hora < HORARIO_INICIO_EXPEDIENTE or hora >= HORARIO_FIM_EXPEDIENTE:
+        return True, f"Fora do Expediente ({data_dt.strftime('%H:%M')})"
+
+    return False, None
+
+
 def analisar_logs_windows(linhas):
     """
     Processa os eventos do Windows a partir das linhas CSV.
@@ -204,6 +232,7 @@ def analisar_logs_windows(linhas):
     contas_criadas = []
     membros_adicionados_grupo = []
     logons_privilegios_especiais = []
+    logons_fora_de_horas = []
     total_sucessos = 0
     total_falhas = 0
 
@@ -224,6 +253,15 @@ def analisar_logs_windows(linhas):
         # Evento 4624: Logon com sucesso
         if id_evento == "4624":
             total_sucessos += 1
+            e_fora, motivo = verificar_fora_de_horas(data_dt)
+            if e_fora:
+                logons_fora_de_horas.append({
+                    "utilizador": utilizador,
+                    "ip": ip_origem,
+                    "hora": data_texto if data_texto else "Hora desconhecida",
+                    "computador": computador if computador else "-",
+                    "motivo": motivo
+                })
 
         # Evento 4625: Logon com falha
         elif id_evento == "4625":
@@ -282,7 +320,8 @@ def analisar_logs_windows(linhas):
         "contas_bloqueadas": contas_bloqueadas,
         "contas_criadas": contas_criadas,
         "membros_adicionados_grupo": membros_adicionados_grupo,
-        "logons_privilegios_especiais": logons_privilegios_especiais
+        "logons_privilegios_especiais": logons_privilegios_especiais,
+        "logons_fora_de_horas": logons_fora_de_horas
     }
 
 
@@ -333,13 +372,14 @@ def analisar_logs_linux(linhas):
     falhas_por_utilizador = Counter()
     falhas_por_ip = Counter()
     falhas_timestamps_por_ip = {}
+    logons_fora_de_horas = []
     total_sucessos = 0
     total_falhas = 0
 
     regex_data_syslog = re.compile(r"^([A-Z][a-z]{2}\s+\d+\s+\d{2}:\d{2}:\d{2})")
     regex_data_iso = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})")
     regex_falha = re.compile(r"Failed password for (?:invalid user )?(\S+) from (\S+)")
-    regex_sucesso = re.compile(r"Accepted password for \S+ from \S+")
+    regex_sucesso = re.compile(r"Accepted password for (\S+) from (\S+)")
 
     for linha in linhas:
         linha_limpa = linha.strip()
@@ -351,8 +391,20 @@ def analisar_logs_linux(linhas):
         if match_data:
             data_dt = converter_data_linux(match_data.group(1))
 
-        if regex_sucesso.search(linha_limpa):
+        match_sucesso = regex_sucesso.search(linha_limpa)
+        if match_sucesso:
             total_sucessos += 1
+            u_sucesso = match_sucesso.group(1).strip()
+            ip_sucesso = match_sucesso.group(2).strip()
+            e_fora, motivo = verificar_fora_de_horas(data_dt)
+            if e_fora:
+                logons_fora_de_horas.append({
+                    "utilizador": u_sucesso,
+                    "ip": ip_sucesso,
+                    "hora": data_dt.strftime("%d/%m/%Y %H:%M:%S") if data_dt else "Hora desconhecida",
+                    "computador": "Servidor Linux (SSH)",
+                    "motivo": motivo
+                })
 
         match_falha = regex_falha.search(linha_limpa)
         if match_falha:
@@ -382,7 +434,8 @@ def analisar_logs_linux(linhas):
         "contas_bloqueadas": [],
         "contas_criadas": [],
         "membros_adicionados_grupo": [],
-        "logons_privilegios_especiais": []
+        "logons_privilegios_especiais": [],
+        "logons_fora_de_horas": logons_fora_de_horas
     }
 
 
@@ -579,6 +632,8 @@ def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray):
     linhas.append(f"  - Total de logins com falha:   {dados['total_falhas']}")
     linhas.append(f"  - Total de logins com sucesso: {dados['total_sucessos']}")
     linhas.append(f"  - Contas bloqueadas (4740):    {dados['total_bloqueios']}")
+    if dados.get("logons_fora_de_horas"):
+        linhas.append(f"  - Logons fora de horas:        {len(dados['logons_fora_de_horas'])}")
     if dados.get("contas_criadas"):
         linhas.append(f"  - Contas criadas (4720):       {len(dados['contas_criadas'])}")
     if dados.get("membros_adicionados_grupo"):
@@ -682,6 +737,14 @@ def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray):
             for p in dados["logons_privilegios_especiais"]:
                 linhas.append(f"    - Conta:        {p['utilizador']:<20} | Hora: {p['hora']:<20} | Computador: {p['computador']}")
             linhas.append("")
+
+    # 8. LOGONS FORA DE HORAS (SUSPEITOS)
+    if dados.get("logons_fora_de_horas"):
+        linhas.append("8. LOGONS BEM-SUCEDIDOS FORA DE HORAS (SUSPEITOS)")
+        linhas.append(sub_separador)
+        for h in dados["logons_fora_de_horas"]:
+            linhas.append(f"  - Conta: {h['utilizador']:<20} | IP: {h['ip']:<18} | Hora: {h['hora']} | Motivo: {h['motivo']}")
+        linhas.append("")
 
     linhas.append(separador)
     linhas.append("Fim do relatório.")
@@ -1049,6 +1112,34 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, caminho_saida
                 pdf.cell(50, 5, p["utilizador"][:25], border=1)
                 pdf.cell(55, 5, p["hora"][:25], border=1)
                 pdf.cell(50, 5, p["computador"][:25], border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        # 7. LOGONS FORA DE HORAS (SUSPEITOS)
+        if dados.get("logons_fora_de_horas"):
+            if pdf.get_y() > 230:
+                pdf.add_page()
+            else:
+                pdf.ln(3)
+
+            pdf.set_font("helvetica", "B", 11)
+            pdf.set_text_color(15, 23, 42)
+            pdf.cell(0, 6, "7. Logons Bem-sucedidos Fora de Horas (Suspeitos)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            pdf.set_fill_color(254, 243, 199)
+            pdf.set_draw_color(245, 158, 11)
+            pdf.set_font("helvetica", "B", 8)
+            pdf.set_text_color(180, 83, 9)
+            pdf.cell(45, 6, "Conta", border=1, fill=True)
+            pdf.cell(45, 6, "IP de Origem", border=1, fill=True)
+            pdf.cell(50, 6, "Data e Hora", border=1, fill=True)
+            pdf.cell(50, 6, "Motivo do Alerta", border=1, fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            pdf.set_font("helvetica", "", 8)
+            pdf.set_text_color(51, 65, 85)
+            for h in dados["logons_fora_de_horas"]:
+                pdf.cell(45, 5, h["utilizador"][:25], border=1)
+                pdf.cell(45, 5, h["ip"][:25], border=1)
+                pdf.cell(50, 5, h["hora"][:25], border=1)
+                pdf.cell(50, 5, h["motivo"][:25], border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         pdf.output(caminho_saida)
         return True, None

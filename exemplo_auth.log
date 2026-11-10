@@ -1,3 +1,4 @@
+Nov 10 02:14:05 srv-linux sshd[1901]: Accepted password for backup_admin from 198.51.100.88 port 59124 ssh2
 Nov 10 10:50:12 srv-linux sshd[2101]: Accepted password for joao from 192.168.1.50 port 52314 ssh2
 Nov 10 10:55:40 srv-linux sshd[2105]: Accepted password for maria from 192.168.1.60 port 52340 ssh2
 Nov 10 11:00:10 srv-linux sshd[2110]: Failed password for invalid user admin from 198.51.100.77 port 41201 ssh2
