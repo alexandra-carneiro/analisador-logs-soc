@@ -2,7 +2,7 @@
            RELATÓRIO DE ANÁLISE DE LOGS - SOC
 =================================================================
 Formato detetado: Linux (auth.log / sshd)
-Regra de Força Bruta: 5+ falhas em 10 minutos
+Regras de Deteção: Brute Force (5+ falhas/10m) | Password Spraying (4+ contas/30m)
 
 1. RESUMO GERAL
 -----------------------------------------------------------------
@@ -24,7 +24,7 @@ Regra de Força Bruta: 5+ falhas em 10 minutos
   2. IP: 198.51.100.77                     | Falhas: 11
   3. IP: 192.168.1.200                     | Falhas: 1
 
-4. PADRÕES DE FORÇA BRUTA DETETADOS
+4. PADRÕES DE FORÇA BRUTA (ATAQUE VERTICAL / CONCENTRADO)
 -----------------------------------------------------------------
   [ALERTA - Gravidade: ALTO]
     - IP de Origem:        203.0.113.199
@@ -33,12 +33,15 @@ Regra de Força Bruta: 5+ falhas em 10 minutos
     - Período do Ataque:   10/11/2026 11:15:02 até 10/11/2026 11:19:40
     - Contas Visadas:      admin
 
+5. PADRÕES DE PASSWORD SPRAYING (DISPERSÃO DE CONTAS)
+-----------------------------------------------------------------
   [ALERTA - Gravidade: MÉDIO]
     - IP de Origem:        198.51.100.77
-    - Falhas na Janela:    11 tentativas em <= 10 minutos
-    - Total de Falhas IP:  11
+    - Contas Distintas:    10 contas visadas
+    - Média por Conta:     1.1 tentativas (spray horizontal)
+    - Total de Tentativas: 11
     - Período do Ataque:   10/11/2026 11:00:10 até 10/11/2026 11:05:40
-    - Contas Visadas:      admin, test, root, guest, suporte e mais 5 contas
+    - Contas Visadas:      admin, test, root, guest, suporte, deploy e mais 4 contas
 
 =================================================================
 Fim do relatório.

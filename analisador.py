@@ -3,6 +3,7 @@ analisador-logs-soc
 Ferramenta simples para análise de logs de segurança (Windows e Linux auth.log).
 Desenvolvida para o dia a dia de analistas de SOC (Security Operations Center).
 Gera relatórios no terminal, em texto (.txt) e em PDF (.pdf com cores por gravidade).
+Suporta deteção de Força Bruta (ataque vertical) e Password Spraying (ataque horizontal).
 """
 
 import sys
@@ -30,11 +31,14 @@ except ImportError:
 # ==============================================================================
 # CONSTANTES DE CONFIGURAÇÃO (Podes alterar estes valores conforme a tua regra)
 # ==============================================================================
-# Mínimo de falhas de login do mesmo IP para ser considerado força bruta
-LIMITE_FALHAS_BRUTE_FORCE = 5
+# Regras de Força Bruta Tradicional (Brute Force Concentrado / Vertical)
+LIMITE_FALHAS_BRUTE_FORCE = 5       # Mínimo de falhas para suspeita de força bruta
+JANELA_MINUTOS_BRUTE_FORCE = 10     # Intervalo de tempo (em minutos) para a janela
 
-# Janela de tempo (em minutos) para agrupar as falhas de login de um mesmo IP
-JANELA_MINUTOS_BRUTE_FORCE = 10
+# Regras de Password Spraying (Ataque Horizontal / Muitas contas com poucas tentativas)
+LIMITE_CONTAS_PASSWORD_SPRAYING = 4        # Mínimo de contas distintas visadas pelo mesmo IP
+MAX_TENTATIVAS_POR_CONTA_SPRAYING = 3      # Média máxima de tentativas por conta (evita bloqueio)
+JANELA_MINUTOS_PASSWORD_SPRAYING = 30      # Janela temporal para agrupar o ataque de spray
 
 # Ficheiros onde os relatórios serão guardados
 FICHEIRO_RELATORIO_TXT = "relatorio.txt"
@@ -77,24 +81,20 @@ def detetar_formato(linhas):
     if not linhas:
         return None
 
-    # Olhamos para as primeiras 30 linhas com conteúdo para identificar o padrão
     amostra = [linha.strip() for linha in linhas if linha.strip()][:30]
     if not amostra:
         return None
 
     texto_amostra = "\n".join(amostra).lower()
 
-    # Padrão Linux sshd: termos clássicos como 'sshd', 'failed password' ou 'accepted password'
     if "sshd" in texto_amostra or "failed password" in texto_amostra or "accepted password" in texto_amostra:
         return "LINUX"
 
-    # Padrão Windows CSV: termos habituais em cabeçalhos de eventos de segurança
     termos_windows = ["id do evento", "event id", "eventid", "4625", "4624", "4740", "palavras-chave", "keywords"]
     for termo in termos_windows:
         if termo in texto_amostra:
             return "WINDOWS"
 
-    # Se a primeira linha contiver separadores de CSV (vírgula ou ponto e vírgula)
     primeira_linha = amostra[0]
     if "," in primeira_linha or ";" in primeira_linha:
         return "WINDOWS"
@@ -354,7 +354,7 @@ def analisar_logs_linux(linhas):
 
 
 # ==============================================================================
-# DETEÇÃO DE FORÇA BRUTA (BRUTE FORCE)
+# DETEÇÃO DE FORÇA BRUTA (BRUTE FORCE - ATAQUE VERTICAL)
 # ==============================================================================
 
 def calcular_gravidade_brute_force(num_falhas):
@@ -372,16 +372,24 @@ def calcular_gravidade_brute_force(num_falhas):
         return "Baixo"
 
 
-def detetar_padroes_brute_force(falhas_timestamps_por_ip):
+def detetar_padroes_brute_force(falhas_timestamps_por_ip, ips_excluidos_spray=None):
     """
     Analisa os registos de falha por IP para identificar padrões de força bruta:
     5 ou mais falhas de login do mesmo IP dentro de uma janela de 10 minutos.
     Retorna uma lista de alertas ordenados por gravidade.
     """
+    if ips_excluidos_spray is None:
+        ips_excluidos_spray = set()
+
     alertas = []
     janela_delta = timedelta(minutes=JANELA_MINUTOS_BRUTE_FORCE)
 
     for ip, registos in falhas_timestamps_por_ip.items():
+        # Se o IP já tiver sido classificado primariamente como Password Spraying,
+        # evitamos duplicar o alerta para manter o relatório limpo
+        if ip in ips_excluidos_spray:
+            continue
+
         if len(registos) < LIMITE_FALHAS_BRUTE_FORCE:
             continue
 
@@ -428,10 +436,95 @@ def detetar_padroes_brute_force(falhas_timestamps_por_ip):
 
 
 # ==============================================================================
+# DETEÇÃO DE PASSWORD SPRAYING (ATAQUE HORIZONTAL)
+# ==============================================================================
+
+def calcular_gravidade_spray(num_contas):
+    """
+    Classifica a gravidade do ataque de password spraying pelo número de contas visadas:
+    - Baixo: 4 a 6 contas distintas
+    - Médio: 7 a 14 contas distintas
+    - Alto: 15 ou mais contas distintas
+    """
+    if num_contas >= 15:
+        return "Alto"
+    elif num_contas >= 7:
+        return "Médio"
+    else:
+        return "Baixo"
+
+
+def detetar_padroes_password_spraying(falhas_timestamps_por_ip):
+    """
+    Identifica tentativas de password spraying:
+    Um único IP a tentar autenticar-se em múltiplas contas diferentes
+    com poucas tentativas em cada conta (comportamento típico para evitar bloqueios).
+    Retorna uma lista de alertas ordenados por gravidade.
+    """
+    alertas_spray = []
+    janela_delta = timedelta(minutes=JANELA_MINUTOS_PASSWORD_SPRAYING)
+
+    for ip, registos in falhas_timestamps_por_ip.items():
+        if len(registos) < LIMITE_CONTAS_PASSWORD_SPRAYING:
+            continue
+
+        registos_com_tempo = [r for r in registos if r["tempo"] is not None]
+        registos_com_tempo.sort(key=lambda x: x["tempo"])
+
+        pico_contas_janela = 0
+        janela_inicio = None
+        janela_fim = None
+        contas_janela_melhor = []
+        qtd_falhas_janela = 0
+
+        if registos_com_tempo:
+            for i in range(len(registos_com_tempo)):
+                t_inicio = registos_com_tempo[i]["tempo"]
+                t_limite = t_inicio + janela_delta
+
+                falhas_na_janela = [r for r in registos_com_tempo[i:] if r["tempo"] <= t_limite]
+                contas_unicas = list(dict.fromkeys(r["utilizador"] for r in falhas_na_janela))
+
+                if len(contas_unicas) > pico_contas_janela:
+                    pico_contas_janela = len(contas_unicas)
+                    contas_janela_melhor = contas_unicas
+                    qtd_falhas_janela = len(falhas_na_janela)
+                    janela_inicio = t_inicio
+                    janela_fim = falhas_na_janela[-1]["tempo"]
+        else:
+            contas_unicas = list(dict.fromkeys(r["utilizador"] for r in registos))
+            pico_contas_janela = len(contas_unicas)
+            contas_janela_melhor = contas_unicas
+            qtd_falhas_janela = len(registos)
+
+        # Regra de Password Spraying:
+        # Pelo menos LIMITE_CONTAS_PASSWORD_SPRAYING contas distintas e baixa média de tentativas por conta
+        if pico_contas_janela >= LIMITE_CONTAS_PASSWORD_SPRAYING:
+            media_tentativas = qtd_falhas_janela / pico_contas_janela
+            if media_tentativas <= MAX_TENTATIVAS_POR_CONTA_SPRAYING:
+                gravidade = calcular_gravidade_spray(pico_contas_janela)
+                alertas_spray.append({
+                    "ip": ip,
+                    "gravidade": gravidade,
+                    "contas_visadas": contas_janela_melhor,
+                    "total_contas": pico_contas_janela,
+                    "total_tentativas": qtd_falhas_janela,
+                    "media_por_conta": round(media_tentativas, 1),
+                    "inicio": janela_inicio.strftime("%d/%m/%Y %H:%M:%S") if janela_inicio else "N/D",
+                    "fim": janela_fim.strftime("%d/%m/%Y %H:%M:%S") if janela_fim else "N/D"
+                })
+
+    ordem_gravidade = {"Alto": 0, "Médio": 1, "Baixo": 2}
+    alertas_spray.sort(key=lambda a: (ordem_gravidade.get(a["gravidade"], 3), -a["total_contas"]))
+
+    return alertas_spray
+
+
+# ==============================================================================
 # GERAÇÃO DO RELATÓRIO: TEXTO E CONSOLA
 # ==============================================================================
 
-def gerar_texto_relatorio(dados, alertas_brute_force):
+def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray):
     """
     Constrói o texto final do relatório em português claro e objetivo,
     pronto para impressão no terminal e gravação em ficheiro .txt.
@@ -444,7 +537,7 @@ def gerar_texto_relatorio(dados, alertas_brute_force):
     linhas.append("           RELATÓRIO DE ANÁLISE DE LOGS - SOC")
     linhas.append(separador)
     linhas.append(f"Formato detetado: {dados['formato']}")
-    linhas.append(f"Regra de Força Bruta: {LIMITE_FALHAS_BRUTE_FORCE}+ falhas em {JANELA_MINUTOS_BRUTE_FORCE} minutos")
+    linhas.append(f"Regras de Deteção: Brute Force ({LIMITE_FALHAS_BRUTE_FORCE}+ falhas/{JANELA_MINUTOS_BRUTE_FORCE}m) | Password Spraying ({LIMITE_CONTAS_PASSWORD_SPRAYING}+ contas/{JANELA_MINUTOS_PASSWORD_SPRAYING}m)")
     linhas.append("")
 
     # 1. TOTAIS GERAIS
@@ -477,8 +570,8 @@ def gerar_texto_relatorio(dados, alertas_brute_force):
         linhas.append("  Nenhum IP com falhas registado.")
     linhas.append("")
 
-    # 4. PADRÕES DE FORÇA BRUTA DETETADOS
-    linhas.append("4. PADRÕES DE FORÇA BRUTA DETETADOS")
+    # 4. PADRÕES DE FORÇA BRUTA (ATAQUE VERTICAL / CONCENTRADO)
+    linhas.append("4. PADRÕES DE FORÇA BRUTA (ATAQUE VERTICAL / CONCENTRADO)")
     linhas.append(sub_separador)
     if alertas_brute_force:
         for alerta in alertas_brute_force:
@@ -494,12 +587,33 @@ def gerar_texto_relatorio(dados, alertas_brute_force):
             linhas.append(f"    - Contas Visadas:      {alvos}")
             linhas.append("")
     else:
-        linhas.append("  Nenhum padrão suspeito de força bruta foi identificado.")
+        linhas.append("  Nenhum padrão suspeito de força bruta concentrada foi identificado.")
         linhas.append("")
 
-    # 5. CONTAS BLOQUEADAS (Relevante no Windows ID 4740)
+    # 5. PADRÕES DE PASSWORD SPRAYING (ATAQUE HORIZONTAL / DISPERSÃO)
+    linhas.append("5. PADRÕES DE PASSWORD SPRAYING (DISPERSÃO DE CONTAS)")
+    linhas.append(sub_separador)
+    if alertas_spray:
+        for spray in alertas_spray:
+            linhas.append(f"  [ALERTA - Gravidade: {spray['gravidade'].upper()}]")
+            linhas.append(f"    - IP de Origem:        {spray['ip']}")
+            linhas.append(f"    - Contas Distintas:    {spray['total_contas']} contas visadas")
+            linhas.append(f"    - Média por Conta:     {spray['media_por_conta']} tentativas (spray horizontal)")
+            linhas.append(f"    - Total de Tentativas: {spray['total_tentativas']}")
+            if spray['inicio'] != "N/D":
+                linhas.append(f"    - Período do Ataque:   {spray['inicio']} até {spray['fim']}")
+            alvos = ", ".join(spray['contas_visadas'][:6])
+            if len(spray['contas_visadas']) > 6:
+                alvos += f" e mais {len(spray['contas_visadas']) - 6} contas"
+            linhas.append(f"    - Contas Visadas:      {alvos}")
+            linhas.append("")
+    else:
+        linhas.append("  Nenhum padrão suspeito de password spraying foi identificado.")
+        linhas.append("")
+
+    # 6. CONTAS BLOQUEADAS (Relevante no Windows ID 4740)
     if dados["contas_bloqueadas"]:
-        linhas.append("5. DETALHE DE CONTAS BLOQUEADAS (EVENTO 4740)")
+        linhas.append("6. DETALHE DE CONTAS BLOQUEADAS (EVENTO 4740)")
         linhas.append(sub_separador)
         for b in dados["contas_bloqueadas"]:
             linhas.append(f"  - Conta: {b['utilizador']:<20} | Hora: {b['hora']:<20} | Computador: {b['computador']}")
@@ -544,19 +658,18 @@ if FPDF_DISPONIVEL:
             # Subtítulo
             self.set_font("helvetica", "", 9)
             self.set_text_color(203, 213, 225)  # Slate 300
-            self.cell(0, 5, "Triagem Operacional de Eventos de Autenticacao e Deteccao de Ameacas", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            self.cell(0, 5, "Triagem Operacional: Forca Bruta, Password Spraying e Bloqueios", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             
             self.ln(6)
 
         def footer(self):
-            # Posicionamento a 15 mm do fundo
             self.set_y(-15)
             self.set_font("helvetica", "I", 8)
             self.set_text_color(148, 163, 184)  # Slate 400
             self.cell(0, 10, f"Pagina {self.page_no()} | analisador-logs-soc - Documento Confidencial de Uso Interno", align="C")
 
 
-def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELATORIO_PDF):
+def gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, caminho_saida=FICHEIRO_RELATORIO_PDF):
     """
     Gera um relatório profissional em PDF usando fpdf2.
     Inclui cabeçalho executivo, tabelas limpas e alertas com cores de gravidade.
@@ -575,7 +688,7 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELAT
         agora_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         pdf.cell(100, 5, f"Data da Analise: {agora_str}")
         pdf.cell(0, 5, f"Formato dos Logs: {dados['formato']}", align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.cell(0, 5, f"Regra de Forca Bruta: {LIMITE_FALHAS_BRUTE_FORCE}+ falhas em {JANELA_MINUTOS_BRUTE_FORCE} minutos", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(0, 5, f"Deteccao: Brute Force ({LIMITE_FALHAS_BRUTE_FORCE}+ falhas/{JANELA_MINUTOS_BRUTE_FORCE}m) | Spray ({LIMITE_CONTAS_PASSWORD_SPRAYING}+ contas/{JANELA_MINUTOS_PASSWORD_SPRAYING}m)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(3)
 
         # 1. RESUMO GERAL (3 Caixas de Métricas)
@@ -583,7 +696,6 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELAT
         pdf.set_text_color(15, 23, 42)
         pdf.cell(0, 7, "1. Resumo Executivo das Metricas", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         
-        # Caixas: Falhas (Vermelho/Rosa), Sucessos (Verde), Bloqueios (Laranja)
         largura_caixa = 60
         altura_caixa = 16
         x_inicial = 10
@@ -632,16 +744,13 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELAT
 
         pdf.set_xy(10, y_inicial + altura_caixa + 6)
 
-        # 2. TABELAS LADO A LADO: TOP UTILIZADORES E TOP IPS
+        # 2. TABELAS: TOP UTILIZADORES E TOP IPS
         pdf.set_font("helvetica", "B", 11)
         pdf.set_text_color(15, 23, 42)
         pdf.cell(0, 6, "2. Top Alvos e Origens Mais Recorrentes", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        col_w1 = 92
-        col_w2 = 93
         y_tab = pdf.get_y()
 
-        # Cabeçalho Tabela Utilizadores
         pdf.set_xy(10, y_tab)
         pdf.set_fill_color(241, 245, 249)
         pdf.set_draw_color(203, 213, 225)
@@ -650,12 +759,10 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELAT
         pdf.cell(65, 6, "Top 5 Utilizadores Visados", border=1, fill=True)
         pdf.cell(27, 6, "Falhas", border=1, align="C", fill=True)
 
-        # Cabeçalho Tabela IPs
         pdf.set_xy(107, y_tab)
         pdf.cell(66, 6, "Top 5 IPs de Origem", border=1, fill=True)
         pdf.cell(27, 6, "Falhas", border=1, align="C", fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        # Linhas das Tabelas
         top_u = dados["falhas_por_utilizador"].most_common(5)
         top_i = dados["falhas_por_ip"].most_common(5)
         max_linhas = max(len(top_u), len(top_i), 1)
@@ -663,7 +770,6 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELAT
         pdf.set_font("helvetica", "", 8)
         for i in range(max_linhas):
             y_linha = pdf.get_y()
-            # Coluna Utilizador
             pdf.set_xy(10, y_linha)
             if i < len(top_u):
                 u_nome, u_qtd = top_u[i]
@@ -673,7 +779,6 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELAT
                 pdf.cell(65, 5, "-", border=1)
                 pdf.cell(27, 5, "-", border=1, align="C")
 
-            # Coluna IP
             pdf.set_xy(107, y_linha)
             if i < len(top_i):
                 ip_nome, ip_qtd = top_i[i]
@@ -685,43 +790,36 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELAT
 
         pdf.ln(5)
 
-        # 3. PADRÕES DE FORÇA BRUTA COM CAIXAS COLORIDAS POR GRAVIDADE
+        # 3. PADRÕES DE FORÇA BRUTA (ATAQUE VERTICAL)
         pdf.set_font("helvetica", "B", 11)
         pdf.set_text_color(15, 23, 42)
-        pdf.cell(0, 6, "3. Padroes de Forca Bruta Detetados (Alertas)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(0, 6, "3. Forca Bruta Concentrada (Ataques Verticais)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         if not alertas_brute_force:
-            pdf.set_font("helvetica", "I", 9)
+            pdf.set_font("helvetica", "I", 8)
             pdf.set_text_color(100, 116, 139)
-            pdf.cell(0, 6, "Nenhum padrao suspeito de forca bruta foi identificado nos logs.", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.ln(3)
+            pdf.cell(0, 5, "Nenhum padrao de forca bruta concentrada identificado.", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(2)
         else:
             for alerta in alertas_brute_force:
                 gravidade = alerta["gravidade"].upper()
-
-                # Definição das cores baseada na gravidade
                 if gravidade == "ALTO":
-                    # Fundo vermelho suave, borda vermelha, texto escuro
                     cor_fundo = (254, 226, 226)
                     cor_borda = (220, 38, 38)
                     cor_texto = (153, 27, 27)
-                elif gravidade == "MÉDIO" or gravidade == "MEDIO":
-                    # Fundo amarelo/laranja suave, borda laranja
+                elif gravidade in ["MÉDIO", "MEDIO"]:
                     cor_fundo = (254, 243, 199)
                     cor_borda = (217, 119, 6)
                     cor_texto = (146, 64, 14)
                 else:
-                    # BAIXO: Fundo azul suave, borda azul
                     cor_fundo = (224, 242, 254)
                     cor_borda = (2, 132, 199)
                     cor_texto = (7, 89, 133)
 
-                # Caixa de Alerta
                 x_alerta = 10
                 y_alerta = pdf.get_y()
-                altura_alerta = 25
+                altura_alerta = 22
 
-                # Quebra de página suave caso não caiba
                 if y_alerta + altura_alerta > 270:
                     pdf.add_page()
                     y_alerta = pdf.get_y()
@@ -730,23 +828,21 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELAT
                 pdf.set_draw_color(*cor_borda)
                 pdf.rect(x_alerta, y_alerta, 190, altura_alerta, "DF")
 
-                # Cabeçalho do alerta com badge
                 pdf.set_xy(x_alerta + 3, y_alerta + 2)
                 pdf.set_font("helvetica", "B", 9)
                 pdf.set_text_color(*cor_texto)
-                pdf.cell(0, 5, f"[ALERTA - GRAVIDADE {gravidade}] IP de Origem: {alerta['ip']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.cell(0, 4, f"[ALERTA BRUTE FORCE - GRAVIDADE {gravidade}] IP de Origem: {alerta['ip']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-                # Detalhes do alerta
                 pdf.set_font("helvetica", "", 8)
                 pdf.set_text_color(51, 65, 85)
                 pdf.set_xy(x_alerta + 5, y_alerta + 7)
-                pdf.cell(90, 4, f"- Falhas na Janela: {alerta['falhas_janela']} tentativas em <= {JANELA_MINUTOS_BRUTE_FORCE} minutos")
-                pdf.cell(0, 4, f"- Total de Falhas deste IP: {alerta['total_falhas_ip']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.cell(90, 4, f"- Falhas na Janela: {alerta['falhas_janela']} tentativas em <= {JANELA_MINUTOS_BRUTE_FORCE}m")
+                pdf.cell(0, 4, f"- Total de Falhas: {alerta['total_falhas_ip']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-                pdf.set_xy(x_alerta + 5, y_alerta + 12)
-                pdf.cell(0, 4, f"- Periodo do Ataque: {alerta['inicio']} ate {alerta['fim']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.set_xy(x_alerta + 5, y_alerta + 11)
+                pdf.cell(0, 4, f"- Periodo: {alerta['inicio']} ate {alerta['fim']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-                pdf.set_xy(x_alerta + 5, y_alerta + 17)
+                pdf.set_xy(x_alerta + 5, y_alerta + 15)
                 alvos_str = ", ".join(alerta["utilizadores"][:6])
                 if len(alerta["utilizadores"]) > 6:
                     alvos_str += f" e mais {len(alerta['utilizadores']) - 6} contas"
@@ -756,15 +852,79 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELAT
 
         pdf.ln(3)
 
-        # 4. CONTAS BLOQUEADAS (EVENTO 4740)
+        # 4. PADRÕES DE PASSWORD SPRAYING (ATAQUE HORIZONTAL)
+        if pdf.get_y() > 240:
+            pdf.add_page()
+
+        pdf.set_font("helvetica", "B", 11)
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 6, "4. Password Spraying Detetado (Ataques Horizontais)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        if not alertas_spray:
+            pdf.set_font("helvetica", "I", 8)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(0, 5, "Nenhum padrao de password spraying identificado.", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(2)
+        else:
+            for spray in alertas_spray:
+                gravidade = spray["gravidade"].upper()
+                if gravidade == "ALTO":
+                    cor_fundo = (254, 226, 226)
+                    cor_borda = (220, 38, 38)
+                    cor_texto = (153, 27, 27)
+                elif gravidade in ["MÉDIO", "MEDIO"]:
+                    cor_fundo = (254, 243, 199)
+                    cor_borda = (217, 119, 6)
+                    cor_texto = (146, 64, 14)
+                else:
+                    cor_fundo = (243, 232, 255)  # Roxo suave para spray
+                    cor_borda = (147, 51, 234)
+                    cor_texto = (107, 33, 168)
+
+                x_spray = 10
+                y_spray = pdf.get_y()
+                altura_spray = 23
+
+                if y_spray + altura_spray > 270:
+                    pdf.add_page()
+                    y_spray = pdf.get_y()
+
+                pdf.set_fill_color(*cor_fundo)
+                pdf.set_draw_color(*cor_borda)
+                pdf.rect(x_spray, y_spray, 190, altura_spray, "DF")
+
+                pdf.set_xy(x_spray + 3, y_spray + 2)
+                pdf.set_font("helvetica", "B", 9)
+                pdf.set_text_color(*cor_texto)
+                pdf.cell(0, 4, f"[ALERTA PASSWORD SPRAY - GRAVIDADE {gravidade}] IP de Origem: {spray['ip']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+                pdf.set_font("helvetica", "", 8)
+                pdf.set_text_color(51, 65, 85)
+                pdf.set_xy(x_spray + 5, y_spray + 7)
+                pdf.cell(90, 4, f"- Contas Distintas: {spray['total_contas']} utilizadores")
+                pdf.cell(0, 4, f"- Media por Conta: {spray['media_por_conta']} tentativas (Spray Horizontal)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+                pdf.set_xy(x_spray + 5, y_spray + 11)
+                pdf.cell(0, 4, f"- Periodo: {spray['inicio']} ate {spray['fim']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+                pdf.set_xy(x_spray + 5, y_spray + 15)
+                contas_str = ", ".join(spray["contas_visadas"][:6])
+                if len(spray["contas_visadas"]) > 6:
+                    contas_str += f" e mais {len(spray['contas_visadas']) - 6} contas"
+                pdf.cell(0, 4, f"- Utilizadores Alvo: {contas_str}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+                pdf.set_xy(10, y_spray + altura_spray + 3)
+
+        pdf.ln(3)
+
+        # 5. CONTAS BLOQUEADAS (EVENTO 4740)
         if dados["contas_bloqueadas"]:
-            # Verifica quebra de página
             if pdf.get_y() > 240:
                 pdf.add_page()
 
             pdf.set_font("helvetica", "B", 11)
             pdf.set_text_color(15, 23, 42)
-            pdf.cell(0, 6, "4. Detalhe de Contas Bloqueadas no Sistema (Evento 4740)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.cell(0, 6, "5. Detalhe de Contas Bloqueadas no Sistema (Evento 4740)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
             pdf.set_fill_color(241, 245, 249)
             pdf.set_draw_color(203, 213, 225)
@@ -839,11 +999,15 @@ def main():
         salvar_relatorio_txt(mensagem_sem_dados + "\n")
         return
 
-    # Deteta padrões de força bruta
-    alertas_brute_force = detetar_padroes_brute_force(dados["falhas_timestamps_por_ip"])
+    # 1. Deteta padrões de Password Spraying (Ataque horizontal)
+    alertas_spray = detetar_padroes_password_spraying(dados["falhas_timestamps_por_ip"])
+    ips_em_spray = {s["ip"] for s in alertas_spray}
+
+    # 2. Deteta padrões de Força Bruta (Ataque vertical concentrado)
+    alertas_brute_force = detetar_padroes_brute_force(dados["falhas_timestamps_por_ip"], ips_excluidos_spray=ips_em_spray)
 
     # Gera o relatório em texto para terminal e ficheiro .txt
-    relatorio_texto = gerar_texto_relatorio(dados, alertas_brute_force)
+    relatorio_texto = gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray)
     print("\n" + relatorio_texto)
 
     # 1. Guarda em .txt
@@ -855,7 +1019,7 @@ def main():
 
     # 2. Guarda em PDF (se fpdf2 estiver disponível)
     if FPDF_DISPONIVEL:
-        sucesso_pdf, erro_pdf = gerar_relatorio_pdf(dados, alertas_brute_force, FICHEIRO_RELATORIO_PDF)
+        sucesso_pdf, erro_pdf = gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, FICHEIRO_RELATORIO_PDF)
         if sucesso_pdf:
             print(f"[+] Relatório executivo em PDF guardado com sucesso em '{FICHEIRO_RELATORIO_PDF}'.\n")
         else:

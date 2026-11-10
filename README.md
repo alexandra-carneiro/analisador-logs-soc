@@ -2,22 +2,24 @@
 
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
 ![Security Focus](https://img.shields.io/badge/focus-SOC%20%7C%20Blue%20Team-red.svg)
+![Threat Detection](https://img.shields.io/badge/detection-Brute%20Force%20%7C%20Password%20Spraying-darkred.svg)
 ![Reports](https://img.shields.io/badge/reports-Terminal%20%7C%20TXT%20%7C%20PDF-success.svg)
 ![AI-Assisted](https://img.shields.io/badge/developed%20with-Google%20Antigravity%20%26%20Gemini-8E75C4.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-informational.svg)
 
-Uma ferramenta prática e leve desenvolvida para analistas de **SOC (Security Operations Center)** e equipas de **Blue Team**. Processa e correlaciona eventos de autenticação de ambientes **Windows** e **Linux (SSH)**, identificando rapidamente anomalias, ataques de dicionário e padrões suspeitos de **força bruta (brute force)**.
+Uma ferramenta prática e leve desenvolvida para analistas de **SOC (Security Operations Center)** e equipas de **Blue Team**. Processa e correlaciona eventos de autenticação de ambientes **Windows** e **Linux (SSH)**, identificando anomalias, ataques de dicionário, **força bruta (brute force)** e **password spraying**.
 
 ---
 
 ## 🎯 O Que a Ferramenta Faz
 
-Em operações diárias de SOC e triagem de incidentes (Nível 1 e 2), o tempo de resposta é crítico. Esta ferramenta responde de forma imediata a três perguntas essenciais:
+Em operações diárias de SOC e triagem de incidentes (Nível 1 e 2), o tempo de resposta é crítico. Esta ferramenta responde de forma imediata a quatro perguntas essenciais:
 
 1. 👤 **Quem está a falhar autenticações?** (Top 5 utilizadores mais visados).
 2. 🌐 **De onde vêm os ataques?** (Top 5 endereços IP de origem com mais falhas).
-3. 🚨 **Existe um ataque de força bruta ativo?** (Correlação temporal em janela deslizante com classificação de gravidade: **Baixo**, **Médio** ou **Alto**).
+3. 🚨 **Existe força bruta ativa?** (Ataques verticais concentrados na mesma conta).
+4. 🌊 **Existe password spraying ativo?** (Ataques horizontais tentando poucas senhas em muitas contas diferentes para burlar regras de bloqueio).
 
 Além disso, contabiliza os sucessos legítimos e lista detalhadamente as **contas de utilizador bloqueadas** no Active Directory / Windows Server.
 
@@ -25,7 +27,10 @@ Além disso, contabiliza os sucessos legítimos e lista detalhadamente as **cont
 
 ## ✨ Principais Funcionalidades
 
-- **Deteção Automática de Formato**: identifica o tipo de log pelo conteúdo do ficheiro (sem necessidade de flags manuais).
+- **Deteção Automática de Formato**: identifica o tipo de log pelo conteúdo do ficheiro (sem flags manuais).
+- **Motores de Deteção Inteligente (Python Puro)**:
+  - **Força Bruta Concentrada**: janela deslizante que identifica rajadas de tentativas repetidas contra a mesma conta.
+  - **Password Spraying**: análise de dispersão que identifica quando um mesmo IP ataca 4 ou mais contas distintas com poucas tentativas por conta.
 - **Suporte Multiplataforma**:
   - **Windows**: ficheiros CSV exportados do Visualizador de Eventos (*Event Viewer* - Segurança).
   - **Linux**: ficheiros de texto do serviço SSH (`/var/log/auth.log` ou `/var/log/secure`).
@@ -33,8 +38,7 @@ Além disso, contabiliza os sucessos legítimos e lista detalhadamente as **cont
 - **Relatório Executivo Multi-formato**:
   - 🖥️ **Terminal**: exibição formatada e legível no console.
   - 📄 **Texto (`relatorio.txt`)**: saída em texto simples para auditoria ou integrações rápidas.
-  - 📊 **PDF Executivo (`relatorio.pdf`)**: gerado com `fpdf2`, com cabeçalho profissional de SOC, tabelas de métricas e alertas coloridos por nível de gravidade (**Vermelho** para Alto, **Laranja** para Médio e **Azul** para Baixo).
-- **Segurança Operacional**: ferramenta passiva de leitura — não altera o sistema nem expõe dados sensíveis.
+  - 📊 **PDF Executivo (`relatorio.pdf`)**: gerado com `fpdf2`, com cabeçalho de SOC, tabelas de métricas e alertas coloridos por nível de gravidade (**Vermelho** para Alto, **Laranja** para Médio e **Azul** para Baixo).
 
 ---
 
@@ -47,7 +51,8 @@ Além disso, contabiliza os sucessos legítimos e lista detalhadamente as **cont
 | **Windows** | `Event ID 4740` | Conta de utilizador bloqueada (com utilizador, hora e computador) |
 | **Linux (SSH)** | `Failed password` | Tentativa falhada de login SSH (senhas erradas ou utilizador inválido) |
 | **Linux (SSH)** | `Accepted password` | Acesso SSH autorizado com sucesso |
-| **Geral (Ambos)**| `5+ falhas em 10 min` | Alerta de Força Bruta por IP (Gravidades: Baixo, Médio, Alto) |
+| **Geral (Ambos)**| `5+ falhas em 10 min` | **Força Bruta**: ataque concentrado/vertical (Baixo, Médio, Alto) |
+| **Geral (Ambos)**| `4+ contas (<=3 tent/conta)` | **Password Spraying**: ataque horizontal/disperso (Baixo, Médio, Alto) |
 
 ---
 
@@ -75,11 +80,10 @@ scp utilizador@ip-do-servidor:~/meu_auth.log ./meu_auth.log
 ## 🚀 Como Executar
 
 ### 1. Instalar Dependências (Opcional para suporte a PDF)
-Para gerar o relatório em PDF com alertas visuais coloridos, instale a biblioteca leve `fpdf2`:
 ```bash
 pip install -r requirements.txt
 ```
-*(Nota: se não instalar o `fpdf2`, a ferramenta funciona perfeitamente gerando os relatórios no terminal e em `.txt`).*
+*(Nota: se não instalar o `fpdf2`, a ferramenta funciona normalmente gerando os relatórios no terminal e em `.txt`).*
 
 ### 2. Execução via Linha de Comandos
 ```bash
@@ -105,7 +109,7 @@ python analisador.py
            RELATÓRIO DE ANÁLISE DE LOGS - SOC
 =================================================================
 Formato detetado: Windows (CSV)
-Regra de Força Bruta: 5+ falhas em 10 minutos
+Regras de Deteção: Brute Force (5+ falhas/10m) | Password Spraying (4+ contas/30m)
 
 1. RESUMO GERAL
 -----------------------------------------------------------------
@@ -127,7 +131,7 @@ Regra de Força Bruta: 5+ falhas em 10 minutos
   2. IP: 198.51.100.25                     | Falhas: 8
   3. IP: 192.168.1.45                      | Falhas: 2
 
-4. PADRÕES DE FORÇA BRUTA DETETADOS
+4. PADRÕES DE FORÇA BRUTA (ATAQUE VERTICAL / CONCENTRADO)
 -----------------------------------------------------------------
   [ALERTA - Gravidade: ALTO]
     - IP de Origem:        203.0.113.50
@@ -136,14 +140,17 @@ Regra de Força Bruta: 5+ falhas em 10 minutos
     - Período do Ataque:   10/11/2026 10:10:02 até 10/11/2026 10:14:30
     - Contas Visadas:      administrador
 
-  [ALERTA - Gravidade: BAIXO]
+5. PADRÕES DE PASSWORD SPRAYING (DISPERSÃO DE CONTAS)
+-----------------------------------------------------------------
+  [ALERTA - Gravidade: MÉDIO]
     - IP de Origem:        198.51.100.25
-    - Falhas na Janela:    8 tentativas em <= 10 minutos
-    - Total de Falhas IP:  8
+    - Contas Distintas:    8 contas visadas
+    - Média por Conta:     1.0 tentativas (spray horizontal)
+    - Total de Tentativas: 8
     - Período do Ataque:   10/11/2026 10:02:15 até 10/11/2026 10:06:15
-    - Contas Visadas:      administrator, admin, root, guest, suporte e mais 3 contas
+    - Contas Visadas:      administrator, admin, root, guest, suporte, backup e mais 2 contas
 
-5. DETALHE DE CONTAS BLOQUEADAS (EVENTO 4740)
+6. DETALHE DE CONTAS BLOQUEADAS (EVENTO 4740)
 -----------------------------------------------------------------
   - Conta: administrador        | Hora: 10/11/2026 10:14:35  | Computador: SRV-AD01
   - Conta: financeiro           | Hora: 10/11/2026 10:15:00  | Computador: SRV-AD01
@@ -159,10 +166,10 @@ Fim do relatório.
 
 ## 🗺️ Roadmap de Evolução
 
-As melhorias futuras planeadas para o projeto, por ordem de construção:
+As melhorias planeadas para o projeto, por ordem de construção:
 
 - [x] **1. Relatório em PDF com o `fpdf2`**: com cabeçalho executivo de SOC, tabelas de métricas e alertas coloridos por nível de gravidade.
-- [ ] **2. Deteção de *Password Spraying***: identificação de muitas contas diferentes atacadas a partir do mesmo IP com poucas tentativas por conta (Python puro).
+- [x] **2. Deteção de *Password Spraying***: identificação de muitas contas diferentes atacadas a partir do mesmo IP com poucas tentativas por conta (Python puro).
 - [ ] **3. Mais IDs de Evento do Windows**: deteção de criação de conta (4720), adição a grupos privilegiados (4728) e privilégios especiais (4672).
 - [ ] **4. Logons Fora de Horas**: identificação de acessos bem-sucedidos fora do expediente de trabalho habitual (horário normal configurável).
 - [ ] **5. Exportação em JSON**: gerar o relatório em formato JSON estruturado para ingestão por SIEMs (Splunk, Elastic, Microsoft Sentinel).
@@ -191,11 +198,17 @@ As melhorias futuras planeadas para o projeto, por ordem de construção:
 
 As constantes de deteção encontram-se no início de `analisador.py`:
 ```python
+# Força Bruta Tradicional (Vertical)
 LIMITE_FALHAS_BRUTE_FORCE = 5       # Limite mínimo de falhas para acionar o alerta
 JANELA_MINUTOS_BRUTE_FORCE = 10     # Intervalo de tempo para a janela deslizante
+
+# Password Spraying (Horizontal)
+LIMITE_CONTAS_PASSWORD_SPRAYING = 4        # Mínimo de contas distintas visadas
+MAX_TENTATIVAS_POR_CONTA_SPRAYING = 3      # Média máxima de tentativas por conta
+JANELA_MINUTOS_PASSWORD_SPRAYING = 30      # Janela temporal do ataque de spray
 ```
 
-Para uma explicação mais detalhada da lógica da janela deslizante e da teoria de segurança de cada ID de evento, consulte o [**`COMO-FUNCIONA.md`**](COMO-FUNCIONA.md).
+Para uma explicação mais detalhada da lógica da janela deslizante, da deteção de dispersão e da teoria de segurança de cada ID de evento, consulte o [**`COMO-FUNCIONA.md`**](COMO-FUNCIONA.md).
 
 ---
 
@@ -206,6 +219,7 @@ Este projeto foi construído em regime de **pair programming / engenharia de sof
 - **Google Antigravity**: Ambiente e agente de engenharia de software avançado do **Google DeepMind**, utilizado para orquestração de ambiente, execução e testes de comandos, automação do Git, integração com a API do GitHub e validação de cenários de teste defensivo.
 - **Modelos Gemini (Google DeepMind)**: Utilizados como copiloto de raciocínio lógico e arquitetura técnica:
   - Modelação do algoritmo de correlação temporal por janela deslizante para deteção precisa de força bruta sem bibliotecas externas.
+  - Modelação matemática da taxa de dispersão de contas para deteção de *Password Spraying*.
   - Implementação de código defensivo em Python (suporte a múltiplas codificações de texto, tolerância a dados nulos e prevenção de falhas operacionais).
   - Geração de datasets sintéticos e realistas de auditoria para Windows (`4624`, `4625`, `4740`) e Linux OpenSSH (`Failed password` e `Accepted password`).
   - Desenho do layout executivo do relatório em PDF com a biblioteca `fpdf2`, incluindo cabeçalho corporativo e codificação cromática de gravidade de incidentes.

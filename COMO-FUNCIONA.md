@@ -6,91 +6,90 @@ Foi desenhado para que qualquer pessoa consiga compreender e apresentar a ferram
 
 ---
 
-## 1. O que é um Ataque de Força Bruta (Brute Force)?
+## 1. Dois Vetores de Ataque: Força Bruta vs. Password Spraying
 
-Um ataque de força bruta é uma técnica usada por atacantes ou ferramentas automatizadas (bots) que tentam adivinhar credenciais de acesso experimentando repetidamente combinações de utilizadores e palavras-passe até encontrarem uma que funcione.
+Para quem trabalha num SOC (Security Operations Center), é fundamental distinguir estes dois tipos de ataques de autenticação:
 
-Geralmente, um ser humano que se engana na palavra-passe faz 1 ou 2 tentativas e depois acerta ou pede a recuperação de conta. Em contrapartida, um ataque automatizado caracteriza-se por:
-- **Grande quantidade de tentativas** falhadas.
-- **Origem no mesmo endereço IP**.
-- **Espaço de tempo muito curto** (segundos ou poucos minutos).
-- **Alvos genéricos** (como `admin`, `root`, `suporte`, `gestor`, `administrator`).
+| Característica | Força Bruta Tradicional (Brute Force) | Password Spraying (Dispersão Horizontal) |
+| :--- | :--- | :--- |
+| **Direção do Ataque** | **Vertical** (profundidade) | **Horizontal** (largura) |
+| **Alvo** | 1 conta específica (ex.: `admin`) | Dezenas ou centenas de contas diferentes |
+| **Tentativas por Conta** | Dezenas ou centenas na mesma conta | Apenas 1 ou 2 tentativas por conta |
+| **Objetivo do Atacante** | Quebrar a senha daquela conta a todo o custo | **Evitar o bloqueio de contas** e adivinhar senhas comuns da empresa |
+| **Exemplo Típico** | Testar 1000 senhas para o utilizador `root` | Testar a senha `Primavera2026!` em 50 funcionários diferentes |
 
 ---
 
-## 2. Como a Ferramenta Deteta Força Bruta?
+## 2. Como a Ferramenta Deteta Força Bruta (Brute Force)?
 
-A ferramenta utiliza uma técnica comum na indústria de SOC chamada **janela temporal deslizante** (sliding time window):
+A ferramenta utiliza o algoritmo de **janela temporal deslizante** (*sliding window*):
 
 1. **Agrupamento por IP de Origem**: todas as falhas de login registadas são associadas ao endereço IP de onde vieram.
 2. **Avaliação Temporal**: para cada IP, a ferramenta organiza os registos por ordem cronológica.
-3. **Cálculo da Janela de 10 minutos**: o algoritmo percorre cada falha e verifica quantas tentativas adicionais aquele IP fez nos 10 minutos seguintes.
-4. **Disparo do Alerta**: se forem encontradas **5 ou mais falhas** dentro de qualquer intervalo de até 10 minutos, a ferramenta gera um alerta de segurança.
+3. **Cálculo da Janela de 10 minutos**: o algoritmo percorre cada falha e verifica quantas tentativas aquele IP fez nos 10 minutos seguintes.
+4. **Disparo do Alerta**: se forem encontradas **5 ou mais falhas** dentro de qualquer intervalo de até 10 minutos focadas em poucas contas, a ferramenta gera um alerta de força bruta concentrada.
 
-### Escala de Gravidade
-
-Para ajudar o analista a priorizar o incidente, a ferramenta classifica cada padrão detetado em três níveis de gravidade:
-
-- **Gravidade BAIXO (5 a 9 falhas em 10 min)**: Pode ser um utilizador legítimo que se esqueceu da palavra-passe ou um script interno mal configurado, mas justifica verificação.
-- **Médio (10 a 19 falhas em 10 min)**: Padrão claro de adivinhação insistente de credenciais.
-- **ALTO (20 ou mais falhas em 10 min)**: Ataque automatizado em massa (dicionário ou botnet), com elevada probabilidade de tentar bloquear contas ou comprometer o sistema.
-
-### Como Mudar os Limites no Código
-
-As regras de deteção estão no topo do ficheiro `analisador.py` em constantes simples:
-```python
-LIMITE_FALHAS_BRUTE_FORCE = 5       # Número mínimo de falhas para alertar
-JANELA_MINUTOS_BRUTE_FORCE = 10     # Intervalo de tempo em minutos
-```
-Se a política da sua organização considerar força bruta apenas a partir de 10 tentativas em 5 minutos, basta alterar estes dois números no código.
+### Escala de Gravidade do Brute Force
+- **BAIXO (5 a 9 falhas em 10 min)**: Pode ser um utilizador distraído ou scan superficial.
+- **MÉDIO (10 a 19 falhas em 10 min)**: Tentativa coordenada de adivinhação.
+- **ALTO (20 ou mais falhas em 10 min)**: Ataque automatizado massivo (dicionário).
 
 ---
 
-## 3. Eventos do Windows (Logs de Segurança)
+## 3. Como a Ferramenta Deteta Password Spraying?
 
-No Windows, os eventos de auditoria são identificados por códigos numéricos chamados **Event IDs**. A ferramenta analisa os três IDs essenciais para a deteção de intrusões em acessos:
+Para apanhar ataques inteligentes que tentam contornar regras de bloqueio testando poucas senhas por conta, a ferramenta aplica uma análise de dispersão:
+
+1. **Contagem de Contas Únicas**: para cada IP com falhas, a ferramenta conta quantos utilizadores distintos foram atacados.
+2. **Cálculo da Média de Tentativas por Conta**:
+   $$\text{Média por Conta} = \frac{\text{Total de Tentativas}}{\text{Número de Contas Únicas}}$$
+3. **Regra de Detecção**:
+   - Se o IP atacou **4 ou mais contas diferentes** (`LIMITE_CONTAS_PASSWORD_SPRAYING = 4`).
+   - E a média de tentativas por conta for **baixa (≤ 3 tentativas por conta)** (`MAX_TENTATIVAS_POR_CONTA_SPRAYING = 3`).
+   - A ferramenta classifica o incidente como **Password Spraying**, isolando-o de falsos positivos.
+
+### Escala de Gravidade do Password Spraying
+- **BAIXO**: 4 a 6 contas distintas visadas.
+- **MÉDIO**: 7 a 14 contas distintas visadas.
+- **ALTO**: 15 ou mais contas distintas visadas.
+
+---
+
+## 4. Eventos do Windows (Logs de Segurança)
+
+No Windows, os eventos de auditoria são identificados por códigos numéricos chamados **Event IDs**:
 
 ### ID 4624 — Logon com Sucesso
-- **O que significa**: Um utilizador ou serviço autenticou-se com sucesso na máquina ou no domínio Active Directory.
-- **Por que é importante no SOC**: Permite ter a contagem total de acessos legítimos. Quando ocorre um pico de falhas seguido de um evento 4624 do mesmo IP, isso indica que o atacante pode ter tido sucesso e que a conta foi comprometida.
+- **O que significa**: Um utilizador ou serviço autenticou-se com sucesso no Windows ou Active Directory.
+- **Importância no SOC**: Permite ter o controlo volumétrico de acessos normais. Se um pico de falhas for seguido de um 4624 do mesmo IP, a conta pode ter sido invadida com sucesso.
 
 ### ID 4625 — Logon com Falha
-- **O que significa**: Houve uma tentativa de entrada no sistema que foi recusada (por exemplo, palavra-passe incorreta, nome de utilizador inexistente ou conta desativada).
-- **Por que é importante no SOC**: É o principal indicador de problemas de autenticação e ataques de força bruta. A ferramenta extrai deste evento o nome do utilizador visado, o endereço IP de onde veio o pedido e a data/hora exata.
+- **O que significa**: Uma tentativa de entrada no sistema foi recusada (palavra-passe errada ou utilizador inexistente).
+- **Importância no SOC**: É o evento base para alimentar os motores de deteção de Força Bruta e Password Spraying.
 
 ### ID 4740 — Conta de Utilizador Bloqueada
-- **O que significa**: A conta de um utilizador foi bloqueada pelo sistema porque excedeu o número máximo de tentativas de login incorretas permitido pela política de segurança da empresa (Account Lockout Policy).
-- **Por que é importante no SOC**: Mostra o impacto real do ataque na organização. Uma conta bloqueada pode causar indisponibilidade de trabalho a um colaborador ou indicar que o atacante ativou as proteções do sistema. A ferramenta lista quem foi bloqueado e a hora exata do evento.
+- **O que significa**: Uma conta foi desativada temporariamente pelo sistema por exceder o número de tentativas erradas permitidas pela política de segurança (*Account Lockout Policy*).
+- **Importância no SOC**: Demonstra o impacto do ataque. A ferramenta extrai quem foi bloqueado, a que horas e em que computador o bloqueio ocorreu.
 
 ---
 
-## 4. Mensagens do Linux (`auth.log` / `secure`)
+## 5. Mensagens do Linux (`auth.log` / `secure`)
 
-No Linux, o serviço que gere as ligações remotas por terminal é o **OpenSSH (`sshd`)**. As suas mensagens de autenticação são registadas em texto corrido:
+No Linux, o serviço OpenSSH (`sshd`) regista os acessos em texto:
 
 ### "Failed password for..."
-- **O que significa**: Alguém tentou ligar-se por SSH e a palavra-passe introduzida estava errada, ou a conta nem sequer existe no sistema (surge frequentemente com o prefixo `Failed password for invalid user <nome>`).
-- **Exemplo**:
-  ```text
-  Nov 10 11:00:10 srv-linux sshd[2110]: Failed password for invalid user admin from 198.51.100.77 port 41201 ssh2
-  ```
-- **Por que é importante no SOC**: É o equivalente direto do evento 4625 do Windows. Permite saber que utilizadores estão a ser visados e que endereços IP na Internet ou na rede interna estão a tentar invadir o servidor.
+- **O que significa**: Tentativa falhada de login SSH (palavra-passe errada ou utilizador inexistente no sistema).
+- **Importância no SOC**: Equivalente direto do evento 4625 do Windows. Permite correlacionar IPs atacantes e utilizadores visados.
 
 ### "Accepted password for..."
-- **O que significa**: A ligação por SSH foi autorizada e o utilizador iniciou sessão com sucesso usando a sua palavra-passe.
-- **Exemplo**:
-  ```text
-  Nov 10 10:50:12 srv-linux sshd[2101]: Accepted password for joao from 192.168.1.50 port 52314 ssh2
-  ```
-- **Por que é importante no SOC**: É o equivalente ao evento 4624 do Windows. Garante visibilidade sobre o total de acessos autorizados ao sistema.
+- **O que significa**: Sessão SSH autorizada com sucesso por autenticação de palavra-passe.
+- **Importância no SOC**: Equivalente ao evento 4624 do Windows. Garante a visibilidade dos acessos autorizados ao servidor.
 
 ---
 
-## 5. Deteção Automática do Formato
+## 6. Deteção Automática do Formato
 
-A ferramenta lê as primeiras linhas do ficheiro e toma decisões com base no seu conteúdo:
-1. **Verificação de Vazio**: se o ficheiro estiver vazio, termina de imediato com um aviso amigável, sem erros ou falhas.
-2. **Linux**: procura por palavras-chave do serviço SSH (`sshd`, `failed password`, `accepted password`).
-3. **Windows**: procura por termos e cabeçalhos habituais do Visualizador de Eventos (`id do evento`, `event id`, `4625`, `4624`, `4740`, ou delimitadores de colunas CSV).
-
-Desta forma, o analista do SOC só precisa de indicar o nome do ficheiro, e a ferramenta adapta-se automaticamente.
+A ferramenta lê as primeiras linhas do ficheiro e adapta-se automaticamente:
+1. **Ficheiro Vazio**: se o ficheiro estiver sem dados, emite um aviso seguro e amigável sem provocar erros no programa.
+2. **Formato Linux**: identifica linhas típicas do serviço OpenSSH (`sshd`, `failed password`, `accepted password`).
+3. **Formato Windows CSV**: identifica cabeçalhos ou campos típicos do Visualizador de Eventos (`ID do evento`, `4625`, `4624`, `4740`).
