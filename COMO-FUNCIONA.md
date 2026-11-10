@@ -69,7 +69,21 @@ Quando um evento de logon com sucesso (**4624** no Windows ou **"Accepted passwo
 
 ---
 
-## 5. Eventos do Windows (Logs de Segurança)
+## 5. Enriquecimento de Threat Intelligence (AbuseIPDB)
+
+No trabalho diário de um analista de SOC, ver um IP externo a falhar logins não é suficiente: é vital saber se esse IP já é conhecido globalmente por atividades maliciosas.
+
+A ferramenta integra-se com a API da **AbuseIPDB**:
+1. **Filtro Automático de IPs Privados**: apenas IPs públicos da Internet são consultados (ignora redes internas como `192.168.x.x` ou `10.x.x.x`).
+2. **Métricas Retornadas**:
+   - **Abuse Confidence Score**: percentagem de confiança (0 a 100%) de que o IP é malicioso.
+   - **País e ISP**: localização geográfica do IP e provedor/datacenter de onde o ataque se originou.
+   - **Histórico de Denúncias**: número de relatórios submetidos por outros analistas e organizações no mundo nos últimos 90 dias.
+3. **Gestão Segura de Chaves**: a chave da API é lida de variáveis de ambiente (`ABUSEIPDB_API_KEY`) ou do ficheiro `.env` local, garantindo que credenciais reais nunca sejam enviadas para o Git.
+
+---
+
+## 6. Eventos do Windows (Logs de Segurança)
 
 No Windows, os eventos de auditoria são identificados por códigos numéricos chamados **Event IDs**:
 
@@ -99,7 +113,7 @@ No Windows, os eventos de auditoria são identificados por códigos numéricos c
 
 ---
 
-## 6. Mensagens do Linux (`auth.log` / `secure`)
+## 7. Mensagens do Linux (`auth.log` / `secure`)
 
 No Linux, o serviço OpenSSH (`sshd`) regista os acessos em texto:
 
@@ -113,7 +127,7 @@ No Linux, o serviço OpenSSH (`sshd`) regista os acessos em texto:
 
 ---
 
-## 7. Deteção Automática do Formato
+## 8. Deteção Automática do Formato
 
 A ferramenta lê as primeiras linhas do ficheiro e adapta-se automaticamente:
 1. **Ficheiro Vazio**: se o ficheiro estiver sem dados, emite um aviso seguro e amigável sem provocar erros no programa.

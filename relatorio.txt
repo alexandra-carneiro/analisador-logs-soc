@@ -67,6 +67,11 @@ Regras de Deteção: Brute Force (5+ falhas/10m) | Password Spraying (4+ contas/
 -----------------------------------------------------------------
   - Conta: tiago                | IP: 198.51.100.99      | Hora: 10/11/2026 03:22:10 | Motivo: Fora do Expediente (03:22)
 
+9. THREAT INTELLIGENCE (ABUSEIPDB)
+-----------------------------------------------------------------
+  [i] Enriquecimento externo desativado. Para ativar, defina a chave gratuita
+      na variável de ambiente ABUSEIPDB_API_KEY ou num ficheiro .env local.
+
 =================================================================
 Fim do relatório.
 =================================================================

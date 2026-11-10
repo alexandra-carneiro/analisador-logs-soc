@@ -11,6 +11,7 @@ import os
 import csv
 import json
 import re
+import ipaddress
 from datetime import datetime, timedelta
 from collections import Counter
 
@@ -27,6 +28,43 @@ try:
     FPDF_DISPONIVEL = True
 except ImportError:
     FPDF_DISPONIVEL = False
+
+# Tentativa de importação da biblioteca requests para consultar a AbuseIPDB
+try:
+    import requests
+    REQUESTS_DISPONIVEL = True
+except ImportError:
+    REQUESTS_DISPONIVEL = False
+
+
+# ==============================================================================
+# CONFIGURAÇÃO DE THREAT INTELLIGENCE (AbuseIPDB)
+# ==============================================================================
+# Carrega a chave de API da AbuseIPDB a partir do ambiente ou ficheiro local .env
+ABUSEIPDB_API_KEY = os.environ.get("ABUSEIPDB_API_KEY")
+
+def carregar_chaves_env_local():
+    """
+    Carrega chaves de API a partir de um ficheiro .env local caso existam,
+    sem necessitar de bibliotecas de terceiros como python-dotenv.
+    """
+    global ABUSEIPDB_API_KEY
+    caminho_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(caminho_env):
+        try:
+            with open(caminho_env, mode="r", encoding="utf-8") as f:
+                for linha in f:
+                    linha = linha.strip()
+                    if linha and not linha.startswith("#") and "=" in linha:
+                        chave, valor = linha.split("=", 1)
+                        chave = chave.strip()
+                        valor = valor.strip().strip('"').strip("'")
+                        if chave == "ABUSEIPDB_API_KEY" and not ABUSEIPDB_API_KEY:
+                            ABUSEIPDB_API_KEY = valor
+        except Exception:
+            pass
+
+carregar_chaves_env_local()
 
 
 # ==============================================================================
@@ -609,10 +647,85 @@ def detetar_padroes_password_spraying(falhas_timestamps_por_ip):
 
 
 # ==============================================================================
+# ENRIQUECIMENTO DE THREAT INTELLIGENCE (AbuseIPDB)
+# ==============================================================================
+
+def eh_ip_publico(ip_str):
+    """
+    Verifica se a string é um endereço IP público válido.
+    Retorna False para IPs privados (RFC 1918), loopback ou texto.
+    """
+    if not ip_str or any(termo in ip_str.lower() for termo in ["desconhecido", "local", "none", "-"]):
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(ip_str.strip())
+        return not (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_reserved or ip_obj.is_link_local)
+    except ValueError:
+        return False
+
+
+def consultar_reputacao_abuseipdb(ip, api_key):
+    """
+    Consulta um IP público na API v2 da AbuseIPDB.
+    Retorna um dicionário com métricas de reputação ou informações de erro.
+    """
+    if not REQUESTS_DISPONIVEL or not api_key:
+        return None
+
+    url = "https://api.abuseipdb.com/api/v2/check"
+    headers = {
+        "Key": api_key,
+        "Accept": "application/json"
+    }
+    params = {
+        "ipAddress": ip,
+        "maxAgeInDays": 90
+    }
+
+    try:
+        resposta = requests.get(url, headers=headers, params=params, timeout=5)
+        if resposta.status_code == 200:
+            info = resposta.json().get("data", {})
+            return {
+                "ip": ip,
+                "score": info.get("abuseConfidenceScore", 0),
+                "pais": info.get("countryCode", "N/D"),
+                "isp": info.get("isp", "N/D"),
+                "total_denuncias": info.get("totalReports", 0),
+                "tipo_uso": info.get("usageType", "N/D")
+            }
+        elif resposta.status_code == 401:
+            return {"ip": ip, "erro": "Chave de API AbuseIPDB inválida"}
+        else:
+            return {"ip": ip, "erro": f"HTTP {resposta.status_code}"}
+    except Exception as e:
+        return {"ip": ip, "erro": f"Erro de conexão ({type(e).__name__})"}
+
+
+def enriquecer_ips_com_abuseipdb(ips_para_analisar, api_key=ABUSEIPDB_API_KEY):
+    """
+    Percorre a lista de IPs suspeitos e enriquece os IPs públicos usando a AbuseIPDB.
+    """
+    if not api_key:
+        return {}
+
+    resultados = {}
+    ips_publicos = list(dict.fromkeys(ip for ip in ips_para_analisar if eh_ip_publico(ip)))
+
+    # Limita a 10 consultas por execução para respeitar os limites de quota gratuita
+    for ip in ips_publicos[:10]:
+        res = consultar_reputacao_abuseipdb(ip, api_key)
+        if res:
+            resultados[ip] = res
+
+    return resultados
+
+
+# ==============================================================================
 # GERAÇÃO DO RELATÓRIO: TEXTO E CONSOLA
 # ==============================================================================
 
-def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray):
+def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray, dados_abuseipdb=None):
     """
     Constrói o texto final do relatório em português claro e objetivo,
     pronto para impressão no terminal e gravação em ficheiro .txt.
@@ -748,6 +861,28 @@ def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray):
             linhas.append(f"  - Conta: {h['utilizador']:<20} | IP: {h['ip']:<18} | Hora: {h['hora']} | Motivo: {h['motivo']}")
         linhas.append("")
 
+    # 9. ENRIQUECIMENTO DE THREAT INTELLIGENCE (ABUSEIPDB)
+    linhas.append("9. THREAT INTELLIGENCE (ABUSEIPDB)")
+    linhas.append(sub_separador)
+    if dados_abuseipdb:
+        for ip, info in dados_abuseipdb.items():
+            if "erro" in info:
+                linhas.append(f"  - IP: {ip:<18} | Erro na consulta: {info['erro']}")
+            else:
+                score = info["score"]
+                classificacao = "MUITO ALTO" if score >= 80 else ("ALTO" if score >= 50 else ("MÉDIO" if score >= 20 else "BAIXO"))
+                linhas.append(f"  - IP: {ip:<18} | Score de Abuso: {score}% ({classificacao})")
+                linhas.append(f"    • País: {info['pais']} | ISP: {info['isp']} | Uso: {info['tipo_uso']}")
+                linhas.append(f"    • Denúncias na Comunidade: {info['total_denuncias']} denúncias públicas")
+                linhas.append("")
+    else:
+        if not ABUSEIPDB_API_KEY:
+            linhas.append("  [i] Enriquecimento externo desativado. Para ativar, defina a chave gratuita")
+            linhas.append("      na variável de ambiente ABUSEIPDB_API_KEY ou num ficheiro .env local.")
+        else:
+            linhas.append("  Nenhum IP público relevante identificado para consulta na AbuseIPDB.")
+        linhas.append("")
+
     linhas.append(separador)
     linhas.append("Fim do relatório.")
     linhas.append(separador)
@@ -767,7 +902,7 @@ def salvar_relatorio_txt(texto_relatorio, caminho_saida=FICHEIRO_RELATORIO_TXT):
         return False, str(e)
 
 
-def salvar_relatorio_json(dados, alertas_brute_force, alertas_spray, caminho_saida=FICHEIRO_RELATORIO_JSON):
+def salvar_relatorio_json(dados, alertas_brute_force, alertas_spray, dados_abuseipdb=None, caminho_saida=FICHEIRO_RELATORIO_JSON):
     """
     Grava os dados da análise num ficheiro JSON estruturado,
     ideal para ingestão automatizada por SIEMs (Splunk, Elastic, Sentinel) ou SOARs.
@@ -794,6 +929,7 @@ def salvar_relatorio_json(dados, alertas_brute_force, alertas_spray, caminho_sai
             ],
             "alertas_forca_bruta": alertas_brute_force,
             "alertas_password_spraying": alertas_spray,
+            "threat_intelligence_abuseipdb": dados_abuseipdb if dados_abuseipdb else {},
             "logons_fora_de_horas": dados.get("logons_fora_de_horas", []),
             "contas_bloqueadas": dados.get("contas_bloqueadas", []),
             "eventos_privilegios_windows": {
@@ -841,7 +977,7 @@ if FPDF_DISPONIVEL:
             self.cell(0, 10, f"Pagina {self.page_no()} | analisador-logs-soc - Documento Confidencial de Uso Interno", align="C")
 
 
-def gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, caminho_saida=FICHEIRO_RELATORIO_PDF):
+def gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, dados_abuseipdb=None, caminho_saida=FICHEIRO_RELATORIO_PDF):
     """
     Gera um relatório profissional em PDF usando fpdf2.
     Inclui cabeçalho executivo, tabelas limpas e alertas com cores de gravidade.
@@ -1186,6 +1322,38 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, caminho_saida
                 pdf.cell(50, 5, h["hora"][:25], border=1)
                 pdf.cell(50, 5, h["motivo"][:25], border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
+        # 8. THREAT INTELLIGENCE (ABUSEIPDB)
+        if dados_abuseipdb:
+            if pdf.get_y() > 230:
+                pdf.add_page()
+            else:
+                pdf.ln(3)
+
+            pdf.set_font("helvetica", "B", 11)
+            pdf.set_text_color(15, 23, 42)
+            pdf.cell(0, 6, "8. Enriquecimento de Threat Intelligence (AbuseIPDB)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            pdf.set_fill_color(241, 245, 249)
+            pdf.set_draw_color(203, 213, 225)
+            pdf.set_font("helvetica", "B", 8)
+            pdf.set_text_color(51, 65, 85)
+            pdf.cell(40, 6, "IP de Origem", border=1, fill=True)
+            pdf.cell(30, 6, "Abuse Score", border=1, fill=True)
+            pdf.cell(25, 6, "Pais", border=1, fill=True)
+            pdf.cell(65, 6, "ISP / Organizacao", border=1, fill=True)
+            pdf.cell(30, 6, "Denuncias", border=1, fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            pdf.set_font("helvetica", "", 8)
+            for ip_cons, info_cons in dados_abuseipdb.items():
+                if "erro" not in info_cons:
+                    score = info_cons["score"]
+                    score_str = f"{score}% (Alto)" if score >= 50 else f"{score}%"
+                    pdf.cell(40, 5, ip_cons[:20], border=1)
+                    pdf.cell(30, 5, score_str, border=1)
+                    pdf.cell(25, 5, info_cons.get("pais", "N/D")[:15], border=1)
+                    pdf.cell(65, 5, info_cons.get("isp", "N/D")[:35], border=1)
+                    pdf.cell(30, 5, str(info_cons.get("total_denuncias", 0)), border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
         pdf.output(caminho_saida)
         return True, None
     except Exception as e:
@@ -1252,8 +1420,16 @@ def main():
     # 2. Deteta padrões de Força Bruta (Ataque vertical concentrado)
     alertas_brute_force = detetar_padroes_brute_force(dados["falhas_timestamps_por_ip"], ips_excluidos_spray=ips_em_spray)
 
+    # 3. Enriquecimento opcional com Threat Intelligence (AbuseIPDB)
+    ips_suspeitos = list(dict.fromkeys(
+        [a["ip"] for a in alertas_brute_force] +
+        [s["ip"] for s in alertas_spray] +
+        [ip for ip, _ in dados["falhas_por_ip"].most_common(5)]
+    ))
+    dados_abuseipdb = enriquecer_ips_com_abuseipdb(ips_suspeitos)
+
     # Gera o relatório em texto para terminal e ficheiro .txt
-    relatorio_texto = gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray)
+    relatorio_texto = gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray, dados_abuseipdb)
     print("\n" + relatorio_texto)
 
     # 1. Guarda em .txt
@@ -1264,7 +1440,7 @@ def main():
         print(f"[-] Erro ao guardar ficheiro .txt: {erro_txt}")
 
     # 2. Guarda em JSON (estruturado para SIEMs e outras ferramentas)
-    sucesso_json, erro_json = salvar_relatorio_json(dados, alertas_brute_force, alertas_spray)
+    sucesso_json, erro_json = salvar_relatorio_json(dados, alertas_brute_force, alertas_spray, dados_abuseipdb)
     if sucesso_json:
         print(f"[+] Relatório estruturado em JSON guardado em '{FICHEIRO_RELATORIO_JSON}'.")
     else:
@@ -1272,7 +1448,7 @@ def main():
 
     # 3. Guarda em PDF (se fpdf2 estiver disponível)
     if FPDF_DISPONIVEL:
-        sucesso_pdf, erro_pdf = gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, FICHEIRO_RELATORIO_PDF)
+        sucesso_pdf, erro_pdf = gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, dados_abuseipdb, FICHEIRO_RELATORIO_PDF)
         if sucesso_pdf:
             print(f"[+] Relatório executivo em PDF guardado com sucesso em '{FICHEIRO_RELATORIO_PDF}'.\n")
         else:

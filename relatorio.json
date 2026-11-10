@@ -1,5 +1,5 @@
 {
-  "@timestamp": "2026-11-10T12:10:33.935178Z",
+  "@timestamp": "2026-11-10T12:20:36.700736Z",
   "ferramenta": "analisador-logs-soc",
   "formato_origem": "Windows (CSV)",
   "metricas_gerais": {
@@ -101,6 +101,7 @@
       "fim": "10/11/2026 10:06:15"
     }
   ],
+  "threat_intelligence_abuseipdb": {},
   "logons_fora_de_horas": [
     {
       "utilizador": "tiago",

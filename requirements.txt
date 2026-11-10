@@ -1,2 +1,3 @@
-# Dependências para funcionalidades opcionais do analisador-logs-soc
-fpdf2>=2.7.0
+# Dependências do analisador-logs-soc
+fpdf2>=2.7.0     # Para geração de relatórios executivos em PDF com cores de gravidade
+requests>=2.25.0 # Para enriquecimento de Threat Intelligence via API da AbuseIPDB
