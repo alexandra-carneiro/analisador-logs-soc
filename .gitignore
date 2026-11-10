@@ -15,3 +15,8 @@ Desktop.ini
 
 # Ficheiros de logs temporários
 *.tmp
+
+# Relatórios gerados em tempo de execução (não versionar no Git)
+relatorio.txt
+relatorio.pdf
+relatorio.json
