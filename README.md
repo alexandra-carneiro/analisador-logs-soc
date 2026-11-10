@@ -9,6 +9,8 @@
 
 Uma ferramenta prática e leve desenvolvida para analistas de **SOC (Security Operations Center)** e equipas de **Blue Team**. Processa e correlaciona eventos de autenticação de ambientes **Windows** e **Linux (SSH)**, identificando rapidamente anomalias, ataques de dicionário e padrões suspeitos de **força bruta (brute force)**.
 
+Construída com ferramentas de IA.
+
 ---
 
 ## 🎯 O Que a Ferramenta Faz
