@@ -3,6 +3,7 @@
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
 ![Security Focus](https://img.shields.io/badge/focus-SOC%20%7C%20Blue%20Team-red.svg)
 ![Reports](https://img.shields.io/badge/reports-Terminal%20%7C%20TXT%20%7C%20PDF-success.svg)
+![AI-Assisted](https://img.shields.io/badge/developed%20with-Google%20Antigravity%20%26%20Gemini-8E75C4.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-informational.svg)
 
@@ -198,6 +199,20 @@ Para uma explicação mais detalhada da lógica da janela deslizante e da teoria
 
 ---
 
+## 🤖 Desenvolvimento com Inteligência Artificial
+
+Este projeto foi construído em regime de **pair programming / engenharia de software assistida por IA**, aliando os requisitos operacionais de cibersegurança e SOC à automação moderna de desenvolvimento:
+
+- **Google Antigravity**: Ambiente e agente de engenharia de software avançado do **Google DeepMind**, utilizado para orquestração de ambiente, execução e testes de comandos, automação do Git, integração com a API do GitHub e validação de cenários de teste defensivo.
+- **Modelos Gemini (Google DeepMind)**: Utilizados como copiloto de raciocínio lógico e arquitetura técnica:
+  - Modelação do algoritmo de correlação temporal por janela deslizante para deteção precisa de força bruta sem bibliotecas externas.
+  - Implementação de código defensivo em Python (suporte a múltiplas codificações de texto, tolerância a dados nulos e prevenção de falhas operacionais).
+  - Geração de datasets sintéticos e realistas de auditoria para Windows (`4624`, `4625`, `4740`) e Linux OpenSSH (`Failed password` e `Accepted password`).
+  - Desenho do layout executivo do relatório em PDF com a biblioteca `fpdf2`, incluindo cabeçalho corporativo e codificação cromática de gravidade de incidentes.
+  - Redação técnica e pedagógica do guia [**`COMO-FUNCIONA.md`**](COMO-FUNCIONA.md) para suporte a defesas técnicas e apresentações de projeto.
+
+---
+
 ## 👩‍💻 Autora & Contribuição
 
-Desenvolvido para fins de análise defensiva e automação em segurança da informação. Sugestões e pull requests são bem-vindos!
+Desenvolvido por **Alexandra Carneiro** para fins de análise defensiva, triagem operacional em SOC e automação em segurança da informação. Sugestões e pull requests são bem-vindos!
