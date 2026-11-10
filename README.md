@@ -49,6 +49,9 @@ Além disso, contabiliza os sucessos legítimos e lista detalhadamente as **cont
 | **Windows** | `Event ID 4625` | Falha de Logon (utilizador incorreto ou password errada) |
 | **Windows** | `Event ID 4624` | Logon bem-sucedido (controlo volumétrico de acessos) |
 | **Windows** | `Event ID 4740` | Conta de utilizador bloqueada (com utilizador, hora e computador) |
+| **Windows** | `Event ID 4720` | Conta criada (indicador crítico de persistência / backdoor) |
+| **Windows** | `Event ID 4728` | Membro adicionado a grupo priv. (elevação de privilégios) |
+| **Windows** | `Event ID 4672` | Logon com privilégios especiais (direitos administrativos) |
 | **Linux (SSH)** | `Failed password` | Tentativa falhada de login SSH (senhas erradas ou utilizador inválido) |
 | **Linux (SSH)** | `Accepted password` | Acesso SSH autorizado com sucesso |
 | **Geral (Ambos)**| `5+ falhas em 10 min` | **Força Bruta**: ataque concentrado/vertical (Baixo, Médio, Alto) |
@@ -170,7 +173,7 @@ As melhorias planeadas para o projeto, por ordem de construção:
 
 - [x] **1. Relatório em PDF com o `fpdf2`**: com cabeçalho executivo de SOC, tabelas de métricas e alertas coloridos por nível de gravidade.
 - [x] **2. Deteção de *Password Spraying***: identificação de muitas contas diferentes atacadas a partir do mesmo IP com poucas tentativas por conta (Python puro).
-- [ ] **3. Mais IDs de Evento do Windows**: deteção de criação de conta (4720), adição a grupos privilegiados (4728) e privilégios especiais (4672).
+- [x] **3. Mais IDs de Evento do Windows**: deteção de criação de conta (4720), adição a grupos privilegiados (4728) e privilégios especiais (4672).
 - [ ] **4. Logons Fora de Horas**: identificação de acessos bem-sucedidos fora do expediente de trabalho habitual (horário normal configurável).
 - [ ] **5. Exportação em JSON**: gerar o relatório em formato JSON estruturado para ingestão por SIEMs (Splunk, Elastic, Microsoft Sentinel).
 - [ ] **6. Enriquecimento de IPs com AbuseIPDB**: consulta automatizada à API gratuita para verificar a reputação e índice de confiança de maliciosidade do IP.

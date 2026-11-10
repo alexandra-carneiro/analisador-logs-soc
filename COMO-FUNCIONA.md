@@ -71,6 +71,18 @@ No Windows, os eventos de auditoria são identificados por códigos numéricos c
 - **O que significa**: Uma conta foi desativada temporariamente pelo sistema por exceder o número de tentativas erradas permitidas pela política de segurança (*Account Lockout Policy*).
 - **Importância no SOC**: Demonstra o impacto do ataque. A ferramenta extrai quem foi bloqueado, a que horas e em que computador o bloqueio ocorreu.
 
+### ID 4720 — Conta de Utilizador Criada (Indicador de Persistência)
+- **O que significa**: Uma nova conta de utilizador local ou de domínio foi criada no sistema.
+- **Importância no SOC**: Em incidentes de segurança, após comprometer um servidor, os atacantes frequentemente criam contas locais adicionais (backdoors) para garantir acesso contínuo mesmo que a senha original seja alterada.
+
+### ID 4728 — Membro Adicionado a Grupo de Segurança (Elevação de Privilégios)
+- **O que significa**: Um utilizador foi adicionado a um grupo de segurança global com privilégios elevados (ex.: *Domain Admins*, *Administrators*, *Enterprise Admins*).
+- **Importância no SOC**: É um dos alertas de maior criticidade num SOC. Se uma conta recém-criada for adicionada a um grupo administrativo, trata-se de um indicador quase certo de elevação de privilégios (*Privilege Escalation*).
+
+### ID 4672 — Privilégios Especiais Atribuídos (Superadministrador)
+- **O que significa**: Um utilizador iniciou sessão com direitos administrativos especiais (como `SeDebugPrivilege`, `SeBackupPrivilege` ou `SeTakeOwnershipPrivilege`).
+- **Importância no SOC**: Permite auditar exatamente quando e onde foram exercidos direitos de superutilizador, distinguindo logons comuns de ações com potencial destrutivo ou de bypass de controlos de segurança.
+
 ---
 
 ## 5. Mensagens do Linux (`auth.log` / `secure`)

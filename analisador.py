@@ -201,6 +201,9 @@ def analisar_logs_windows(linhas):
     falhas_por_ip = Counter()
     falhas_timestamps_por_ip = {}
     contas_bloqueadas = []
+    contas_criadas = []
+    membros_adicionados_grupo = []
+    logons_privilegios_especiais = []
     total_sucessos = 0
     total_falhas = 0
 
@@ -244,6 +247,30 @@ def analisar_logs_windows(linhas):
                 "computador": computador if computador else "-"
             })
 
+        # Evento 4720: Conta de utilizador criada (Indicador de Persistência)
+        elif id_evento == "4720":
+            contas_criadas.append({
+                "utilizador": utilizador,
+                "hora": data_texto if data_texto else "Hora desconhecida",
+                "computador": computador if computador else "-"
+            })
+
+        # Evento 4728: Membro adicionado a grupo de segurança global (Elevação de Privilégios)
+        elif id_evento == "4728":
+            membros_adicionados_grupo.append({
+                "utilizador": utilizador,
+                "hora": data_texto if data_texto else "Hora desconhecida",
+                "computador": computador if computador else "-"
+            })
+
+        # Evento 4672: Privilégios especiais atribuídos a novo logon (Superprivilégios de Administrador)
+        elif id_evento == "4672":
+            logons_privilegios_especiais.append({
+                "utilizador": utilizador,
+                "hora": data_texto if data_texto else "Hora desconhecida",
+                "computador": computador if computador else "-"
+            })
+
     return {
         "formato": "Windows (CSV)",
         "total_falhas": total_falhas,
@@ -252,7 +279,10 @@ def analisar_logs_windows(linhas):
         "falhas_por_utilizador": falhas_por_utilizador,
         "falhas_por_ip": falhas_por_ip,
         "falhas_timestamps_por_ip": falhas_timestamps_por_ip,
-        "contas_bloqueadas": contas_bloqueadas
+        "contas_bloqueadas": contas_bloqueadas,
+        "contas_criadas": contas_criadas,
+        "membros_adicionados_grupo": membros_adicionados_grupo,
+        "logons_privilegios_especiais": logons_privilegios_especiais
     }
 
 
@@ -349,7 +379,10 @@ def analisar_logs_linux(linhas):
         "falhas_por_utilizador": falhas_por_utilizador,
         "falhas_por_ip": falhas_por_ip,
         "falhas_timestamps_por_ip": falhas_timestamps_por_ip,
-        "contas_bloqueadas": []
+        "contas_bloqueadas": [],
+        "contas_criadas": [],
+        "membros_adicionados_grupo": [],
+        "logons_privilegios_especiais": []
     }
 
 
@@ -545,7 +578,13 @@ def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray):
     linhas.append(sub_separador)
     linhas.append(f"  - Total de logins com falha:   {dados['total_falhas']}")
     linhas.append(f"  - Total de logins com sucesso: {dados['total_sucessos']}")
-    linhas.append(f"  - Contas bloqueadas:           {dados['total_bloqueios']}")
+    linhas.append(f"  - Contas bloqueadas (4740):    {dados['total_bloqueios']}")
+    if dados.get("contas_criadas"):
+        linhas.append(f"  - Contas criadas (4720):       {len(dados['contas_criadas'])}")
+    if dados.get("membros_adicionados_grupo"):
+        linhas.append(f"  - Adições a grupos priv. (4728):{len(dados['membros_adicionados_grupo'])}")
+    if dados.get("logons_privilegios_especiais"):
+        linhas.append(f"  - Logons privilegiados (4672):  {len(dados['logons_privilegios_especiais'])}")
     linhas.append("")
 
     # 2. TOP 5 UTILIZADORES COM MAIS FALHAS
@@ -618,6 +657,31 @@ def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray):
         for b in dados["contas_bloqueadas"]:
             linhas.append(f"  - Conta: {b['utilizador']:<20} | Hora: {b['hora']:<20} | Computador: {b['computador']}")
         linhas.append("")
+
+    # 7. EVENTOS DE AUDITORIA CRÍTICOS (WINDOWS: 4720, 4728, 4672)
+    tem_eventos_auditoria = (
+        dados.get("contas_criadas") or
+        dados.get("membros_adicionados_grupo") or
+        dados.get("logons_privilegios_especiais")
+    )
+    if tem_eventos_auditoria:
+        linhas.append("7. PERSISTÊNCIA E PRIVILÉGIOS (EVENTOS 4720, 4728, 4672)")
+        linhas.append(sub_separador)
+        if dados.get("contas_criadas"):
+            linhas.append("  [!] CONTAS DE UTILIZADOR CRIADAS (ID 4720 - Indicador de Persistência):")
+            for c in dados["contas_criadas"]:
+                linhas.append(f"    - Conta Criada: {c['utilizador']:<20} | Hora: {c['hora']:<20} | Computador: {c['computador']}")
+            linhas.append("")
+        if dados.get("membros_adicionados_grupo"):
+            linhas.append("  [!] ADIÇÕES A GRUPOS PRIVILEGIADOS (ID 4728 - Elevação de Privilégios):")
+            for m in dados["membros_adicionados_grupo"]:
+                linhas.append(f"    - Membro:       {m['utilizador']:<20} | Hora: {m['hora']:<20} | Computador: {m['computador']}")
+            linhas.append("")
+        if dados.get("logons_privilegios_especiais"):
+            linhas.append("  [!] LOGONS COM SUPERPRIVILÉGIOS (ID 4672 - Administrador Especial):")
+            for p in dados["logons_privilegios_especiais"]:
+                linhas.append(f"    - Conta:        {p['utilizador']:<20} | Hora: {p['hora']:<20} | Computador: {p['computador']}")
+            linhas.append("")
 
     linhas.append(separador)
     linhas.append("Fim do relatório.")
@@ -939,6 +1003,52 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, caminho_saida
                 pdf.cell(60, 5, b["utilizador"][:30], border=1)
                 pdf.cell(65, 5, b["hora"][:30], border=1)
                 pdf.cell(65, 5, b["computador"][:30], border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        # 6. PERSISTÊNCIA E ELEVAÇÃO DE PRIVILÉGIOS (EVENTOS 4720, 4728, 4672)
+        tem_eventos_auditoria = (
+            dados.get("contas_criadas") or
+            dados.get("membros_adicionados_grupo") or
+            dados.get("logons_privilegios_especiais")
+        )
+        if tem_eventos_auditoria:
+            if pdf.get_y() > 230:
+                pdf.add_page()
+            else:
+                pdf.ln(3)
+
+            pdf.set_font("helvetica", "B", 11)
+            pdf.set_text_color(15, 23, 42)
+            pdf.cell(0, 6, "6. Persistencia e Elevacao de Privilegios (Windows 4720, 4728, 4672)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            pdf.set_fill_color(254, 242, 242)
+            pdf.set_draw_color(239, 68, 68)
+            pdf.set_font("helvetica", "B", 8)
+            pdf.set_text_color(185, 28, 28)
+            pdf.cell(35, 6, "Tipo de Evento", border=1, fill=True)
+            pdf.cell(50, 6, "Conta / Alvo", border=1, fill=True)
+            pdf.cell(55, 6, "Data e Hora", border=1, fill=True)
+            pdf.cell(50, 6, "Computador", border=1, fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            pdf.set_font("helvetica", "", 8)
+            pdf.set_text_color(51, 65, 85)
+
+            for c in dados.get("contas_criadas", []):
+                pdf.cell(35, 5, "4720 (Conta Criada)", border=1)
+                pdf.cell(50, 5, c["utilizador"][:25], border=1)
+                pdf.cell(55, 5, c["hora"][:25], border=1)
+                pdf.cell(50, 5, c["computador"][:25], border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            for m in dados.get("membros_adicionados_grupo", []):
+                pdf.cell(35, 5, "4728 (Membro Grupo)", border=1)
+                pdf.cell(50, 5, m["utilizador"][:25], border=1)
+                pdf.cell(55, 5, m["hora"][:25], border=1)
+                pdf.cell(50, 5, m["computador"][:25], border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            for p in dados.get("logons_privilegios_especiais", []):
+                pdf.cell(35, 5, "4672 (Superprivilegio)", border=1)
+                pdf.cell(50, 5, p["utilizador"][:25], border=1)
+                pdf.cell(55, 5, p["hora"][:25], border=1)
+                pdf.cell(50, 5, p["computador"][:25], border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         pdf.output(caminho_saida)
         return True, None
