@@ -2,7 +2,7 @@
 analisador-logs-soc
 Ferramenta simples para análise de logs de segurança (Windows e Linux auth.log).
 Desenvolvida para o dia a dia de analistas de SOC (Security Operations Center).
-Funciona apenas com a biblioteca padrão do Python 3.
+Gera relatórios no terminal, em texto (.txt) e em PDF (.pdf com cores por gravidade).
 """
 
 import sys
@@ -19,6 +19,13 @@ if sys.platform.startswith("win"):
     except Exception:
         pass
 
+# Tentativa de importação da biblioteca opcional fpdf2 para gerar PDF
+try:
+    from fpdf import FPDF, XPos, YPos
+    FPDF_DISPONIVEL = True
+except ImportError:
+    FPDF_DISPONIVEL = False
+
 
 # ==============================================================================
 # CONSTANTES DE CONFIGURAÇÃO (Podes alterar estes valores conforme a tua regra)
@@ -29,8 +36,9 @@ LIMITE_FALHAS_BRUTE_FORCE = 5
 # Janela de tempo (em minutos) para agrupar as falhas de login de um mesmo IP
 JANELA_MINUTOS_BRUTE_FORCE = 10
 
-# Nome do ficheiro onde o relatório final será guardado
-FICHEIRO_RELATORIO_SAIDA = "relatorio.txt"
+# Ficheiros onde os relatórios serão guardados
+FICHEIRO_RELATORIO_TXT = "relatorio.txt"
+FICHEIRO_RELATORIO_PDF = "relatorio.pdf"
 
 
 # ==============================================================================
@@ -143,13 +151,11 @@ def analisar_logs_windows(linhas):
     Processa os eventos do Windows a partir das linhas CSV.
     Retorna um dicionário estruturado com as métricas recolhidas.
     """
-    # Deteta se o delimitador é vírgula ou ponto e vírgula (comum no Windows em português)
     primeira_linha = next((linha for linha in linhas if linha.strip()), "")
     delimitador = ";" if primeira_linha.count(";") > primeira_linha.count(",") else ","
 
     leitor = csv.reader(linhas, delimiter=delimitador)
     
-    # Procura a linha de cabeçalho
     cabecalho = None
     for linha in leitor:
         if linha and any(campo.strip() for campo in linha):
@@ -168,7 +174,6 @@ def analisar_logs_windows(linhas):
             "contas_bloqueadas": []
         }
 
-    # Mapeia os índices das colunas mais importantes
     idx_evento = None
     idx_data = None
     idx_utilizador = None
@@ -192,7 +197,6 @@ def analisar_logs_windows(linhas):
             if idx_computador is None:
                 idx_computador = i
 
-    # Estruturas para guardar os dados
     falhas_por_utilizador = Counter()
     falhas_por_ip = Counter()
     falhas_timestamps_por_ip = {}
@@ -200,19 +204,16 @@ def analisar_logs_windows(linhas):
     total_sucessos = 0
     total_falhas = 0
 
-    # Percorre cada registo do CSV
     for linha in leitor:
         if not linha or not any(campo.strip() for campo in linha):
             continue
 
-        # Obtém o valor de cada coluna com tolerância a colunas ausentes ou vazias
         id_evento = linha[idx_evento].strip() if idx_evento is not None and idx_evento < len(linha) else ""
         data_texto = linha[idx_data].strip() if idx_data is not None and idx_data < len(linha) else ""
         utilizador = linha[idx_utilizador].strip() if idx_utilizador is not None and idx_utilizador < len(linha) else ""
         ip_origem = linha[idx_ip].strip() if idx_ip is not None and idx_ip < len(linha) else ""
         computador = linha[idx_computador].strip() if idx_computador is not None and idx_computador < len(linha) else ""
 
-        # Limpeza de valores vazios ou de preenchimento padrão do Windows ("-")
         utilizador = utilizador if utilizador and utilizador != "-" else "Desconhecido"
         ip_origem = ip_origem if ip_origem and ip_origem != "-" else "Desconhecido / Local"
         data_dt = converter_data_windows(data_texto)
@@ -263,7 +264,7 @@ def converter_data_linux(texto_data):
     """
     Tenta converter a data de uma linha do auth.log.
     Exemplos: 'Nov 10 09:12:01' ou formato ISO '2026-11-10T09:12:01'.
-    Se não incluir o ano, adiciona explicitamente o ano atual para evitar ambiguidades.
+    Se não incluir o ano, adiciona explicitamente o ano atual para evitar avisos.
     """
     if not texto_data:
         return None
@@ -271,8 +272,6 @@ def converter_data_linux(texto_data):
     texto_data = texto_data.strip()
     ano_atual = datetime.now().year
 
-    # Formato tradicional syslog: 'Nov 10 09:12:01' ou 'Nov  2 09:12:01'
-    # Adicionamos o ano atual à frente da string para evitar o DeprecationWarning do Python 3.12+
     partes = texto_data.split()
     if len(partes) == 3:
         mes, dia, hora = partes
@@ -282,7 +281,6 @@ def converter_data_linux(texto_data):
         except ValueError:
             pass
 
-    # Formatos alternativos com ano ou ISO
     formatos = [
         "%Y-%m-%dT%H:%M:%S",
         "%b %d %Y %H:%M:%S",
@@ -308,15 +306,9 @@ def analisar_logs_linux(linhas):
     total_sucessos = 0
     total_falhas = 0
 
-    # Regex para capturar data/hora tradicional (ex: 'Nov 10 14:02:10') ou ISO no início da linha
     regex_data_syslog = re.compile(r"^([A-Z][a-z]{2}\s+\d+\s+\d{2}:\d{2}:\d{2})")
     regex_data_iso = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})")
-
-    # Regex para linhas de falha de login do sshd
-    # Cobre: 'Failed password for invalid user admin from 192.168.1.10' e 'Failed password for root from 192.168.1.10'
     regex_falha = re.compile(r"Failed password for (?:invalid user )?(\S+) from (\S+)")
-
-    # Regex para linhas de sucesso do sshd: 'Accepted password for joao from 192.168.1.5'
     regex_sucesso = re.compile(r"Accepted password for \S+ from \S+")
 
     for linha in linhas:
@@ -324,17 +316,14 @@ def analisar_logs_linux(linhas):
         if not linha_limpa:
             continue
 
-        # Extrai a data/hora do início da linha se disponível
         data_dt = None
         match_data = regex_data_syslog.match(linha_limpa) or regex_data_iso.match(linha_limpa)
         if match_data:
             data_dt = converter_data_linux(match_data.group(1))
 
-        # Verifica se é uma linha de sucesso
         if regex_sucesso.search(linha_limpa):
             total_sucessos += 1
 
-        # Verifica se é uma linha de falha
         match_falha = regex_falha.search(linha_limpa)
         if match_falha:
             total_falhas += 1
@@ -356,7 +345,7 @@ def analisar_logs_linux(linhas):
         "formato": "Linux (auth.log / sshd)",
         "total_falhas": total_falhas,
         "total_sucessos": total_sucessos,
-        "total_bloqueios": 0,  # O auth.log básico foca nas falhas e acessos SSH
+        "total_bloqueios": 0,
         "falhas_por_utilizador": falhas_por_utilizador,
         "falhas_por_ip": falhas_por_ip,
         "falhas_timestamps_por_ip": falhas_timestamps_por_ip,
@@ -396,23 +385,18 @@ def detetar_padroes_brute_force(falhas_timestamps_por_ip):
         if len(registos) < LIMITE_FALHAS_BRUTE_FORCE:
             continue
 
-        # Separa os registos que têm timestamp válido
         registos_com_tempo = [r for r in registos if r["tempo"] is not None]
-        
-        # Ordena cronologicamente
         registos_com_tempo.sort(key=lambda x: x["tempo"])
 
         pico_falhas_janela = 0
         janela_inicio = None
         janela_fim = None
 
-        # Janela deslizante para encontrar o intervalo mais intenso de falhas
         if registos_com_tempo:
             for i in range(len(registos_com_tempo)):
                 t_inicio = registos_com_tempo[i]["tempo"]
                 t_limite = t_inicio + janela_delta
                 
-                # Conta quantas falhas ocorreram dentro dos 10 minutos a partir de t_inicio
                 falhas_na_janela = [r for r in registos_com_tempo[i:] if r["tempo"] <= t_limite]
                 qtd = len(falhas_na_janela)
 
@@ -421,10 +405,8 @@ def detetar_padroes_brute_force(falhas_timestamps_por_ip):
                     janela_inicio = t_inicio
                     janela_fim = falhas_na_janela[-1]["tempo"]
         else:
-            # Caso não haja timestamps válidos mas o total ultrapasse o limite
             pico_falhas_janela = len(registos)
 
-        # Se atingiu o limite de força bruta
         if pico_falhas_janela >= LIMITE_FALHAS_BRUTE_FORCE:
             gravidade = calcular_gravidade_brute_force(pico_falhas_janela)
             utilizadores_visados = list(dict.fromkeys(r["utilizador"] for r in registos))
@@ -439,7 +421,6 @@ def detetar_padroes_brute_force(falhas_timestamps_por_ip):
                 "utilizadores": utilizadores_visados
             })
 
-    # Ordena alertas: Alto primeiro, depois Médio, depois Baixo
     ordem_gravidade = {"Alto": 0, "Médio": 1, "Baixo": 2}
     alertas.sort(key=lambda a: (ordem_gravidade.get(a["gravidade"], 3), -a["falhas_janela"]))
 
@@ -447,13 +428,13 @@ def detetar_padroes_brute_force(falhas_timestamps_por_ip):
 
 
 # ==============================================================================
-# GERAÇÃO DO RELATÓRIO
+# GERAÇÃO DO RELATÓRIO: TEXTO E CONSOLA
 # ==============================================================================
 
 def gerar_texto_relatorio(dados, alertas_brute_force):
     """
     Constrói o texto final do relatório em português claro e objetivo,
-    pronto para impressão no terminal e gravação em ficheiro.
+    pronto para impressão no terminal e gravação em ficheiro .txt.
     """
     linhas = []
     separador = "=" * 65
@@ -531,13 +512,275 @@ def gerar_texto_relatorio(dados, alertas_brute_force):
     return "\n".join(linhas)
 
 
-def salvar_relatorio(texto_relatorio, caminho_saida=FICHEIRO_RELATORIO_SAIDA):
+def salvar_relatorio_txt(texto_relatorio, caminho_saida=FICHEIRO_RELATORIO_TXT):
     """
-    Grava o relatório num ficheiro de texto (relatorio.txt).
+    Grava o relatório num ficheiro de texto (.txt).
     """
     try:
         with open(caminho_saida, mode="w", encoding="utf-8") as f:
             f.write(texto_relatorio)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+# ==============================================================================
+# GERAÇÃO DO RELATÓRIO EM PDF (COM FPDF2 E CORES DE GRAVIDADE)
+# ==============================================================================
+
+if FPDF_DISPONIVEL:
+    class RelatorioSOCPDF(FPDF):
+        def header(self):
+            # Barra superior azul escura (estilo SOC / Cybersecurity)
+            self.set_fill_color(15, 23, 42)  # Slate 900
+            self.rect(0, 0, 210, 26, "F")
+            
+            # Título principal
+            self.set_text_color(255, 255, 255)
+            self.set_font("helvetica", "B", 14)
+            self.set_xy(10, 5)
+            self.cell(0, 8, "RELATORIO DE ANALISE DE SEGURANCA - SOC", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            
+            # Subtítulo
+            self.set_font("helvetica", "", 9)
+            self.set_text_color(203, 213, 225)  # Slate 300
+            self.cell(0, 5, "Triagem Operacional de Eventos de Autenticacao e Deteccao de Ameacas", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            
+            self.ln(6)
+
+        def footer(self):
+            # Posicionamento a 15 mm do fundo
+            self.set_y(-15)
+            self.set_font("helvetica", "I", 8)
+            self.set_text_color(148, 163, 184)  # Slate 400
+            self.cell(0, 10, f"Pagina {self.page_no()} | analisador-logs-soc - Documento Confidencial de Uso Interno", align="C")
+
+
+def gerar_relatorio_pdf(dados, alertas_brute_force, caminho_saida=FICHEIRO_RELATORIO_PDF):
+    """
+    Gera um relatório profissional em PDF usando fpdf2.
+    Inclui cabeçalho executivo, tabelas limpas e alertas com cores de gravidade.
+    """
+    if not FPDF_DISPONIVEL:
+        return False, "A biblioteca 'fpdf2' não está instalada. Execute: pip install fpdf2"
+
+    try:
+        pdf = RelatorioSOCPDF()
+        pdf.set_auto_page_break(auto=True, margin=18)
+        pdf.add_page()
+
+        # Metadados do Relatório
+        pdf.set_font("helvetica", "", 9)
+        pdf.set_text_color(71, 85, 105)
+        agora_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        pdf.cell(100, 5, f"Data da Analise: {agora_str}")
+        pdf.cell(0, 5, f"Formato dos Logs: {dados['formato']}", align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(0, 5, f"Regra de Forca Bruta: {LIMITE_FALHAS_BRUTE_FORCE}+ falhas em {JANELA_MINUTOS_BRUTE_FORCE} minutos", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(3)
+
+        # 1. RESUMO GERAL (3 Caixas de Métricas)
+        pdf.set_font("helvetica", "B", 11)
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 7, "1. Resumo Executivo das Metricas", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        
+        # Caixas: Falhas (Vermelho/Rosa), Sucessos (Verde), Bloqueios (Laranja)
+        largura_caixa = 60
+        altura_caixa = 16
+        x_inicial = 10
+        y_inicial = pdf.get_y()
+
+        # Caixa 1: Falhas
+        pdf.set_xy(x_inicial, y_inicial)
+        pdf.set_fill_color(254, 242, 242)
+        pdf.set_draw_color(239, 68, 68)
+        pdf.rect(x_inicial, y_inicial, largura_caixa, altura_caixa, "DF")
+        pdf.set_xy(x_inicial + 2, y_inicial + 2)
+        pdf.set_font("helvetica", "B", 8)
+        pdf.set_text_color(185, 28, 28)
+        pdf.cell(largura_caixa - 4, 4, "LOGINS COM FALHA", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_xy(x_inicial + 2, y_inicial + 7)
+        pdf.set_font("helvetica", "B", 14)
+        pdf.cell(largura_caixa - 4, 7, str(dados["total_falhas"]), align="C")
+
+        # Caixa 2: Sucessos
+        x_caixa2 = x_inicial + largura_caixa + 5
+        pdf.set_xy(x_caixa2, y_inicial)
+        pdf.set_fill_color(240, 253, 244)
+        pdf.set_draw_color(34, 197, 94)
+        pdf.rect(x_caixa2, y_inicial, largura_caixa, altura_caixa, "DF")
+        pdf.set_xy(x_caixa2 + 2, y_inicial + 2)
+        pdf.set_font("helvetica", "B", 8)
+        pdf.set_text_color(21, 128, 61)
+        pdf.cell(largura_caixa - 4, 4, "LOGINS COM SUCESSO", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_xy(x_caixa2 + 2, y_inicial + 7)
+        pdf.set_font("helvetica", "B", 14)
+        pdf.cell(largura_caixa - 4, 7, str(dados["total_sucessos"]), align="C")
+
+        # Caixa 3: Bloqueios
+        x_caixa3 = x_caixa2 + largura_caixa + 5
+        pdf.set_xy(x_caixa3, y_inicial)
+        pdf.set_fill_color(254, 243, 199)
+        pdf.set_draw_color(245, 158, 11)
+        pdf.rect(x_caixa3, y_inicial, largura_caixa, altura_caixa, "DF")
+        pdf.set_xy(x_caixa3 + 2, y_inicial + 2)
+        pdf.set_font("helvetica", "B", 8)
+        pdf.set_text_color(180, 83, 9)
+        pdf.cell(largura_caixa - 4, 4, "CONTAS BLOQUEADAS", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_xy(x_caixa3 + 2, y_inicial + 7)
+        pdf.set_font("helvetica", "B", 14)
+        pdf.cell(largura_caixa - 4, 7, str(dados["total_bloqueios"]), align="C")
+
+        pdf.set_xy(10, y_inicial + altura_caixa + 6)
+
+        # 2. TABELAS LADO A LADO: TOP UTILIZADORES E TOP IPS
+        pdf.set_font("helvetica", "B", 11)
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 6, "2. Top Alvos e Origens Mais Recorrentes", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        col_w1 = 92
+        col_w2 = 93
+        y_tab = pdf.get_y()
+
+        # Cabeçalho Tabela Utilizadores
+        pdf.set_xy(10, y_tab)
+        pdf.set_fill_color(241, 245, 249)
+        pdf.set_draw_color(203, 213, 225)
+        pdf.set_font("helvetica", "B", 8)
+        pdf.set_text_color(51, 65, 85)
+        pdf.cell(65, 6, "Top 5 Utilizadores Visados", border=1, fill=True)
+        pdf.cell(27, 6, "Falhas", border=1, align="C", fill=True)
+
+        # Cabeçalho Tabela IPs
+        pdf.set_xy(107, y_tab)
+        pdf.cell(66, 6, "Top 5 IPs de Origem", border=1, fill=True)
+        pdf.cell(27, 6, "Falhas", border=1, align="C", fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        # Linhas das Tabelas
+        top_u = dados["falhas_por_utilizador"].most_common(5)
+        top_i = dados["falhas_por_ip"].most_common(5)
+        max_linhas = max(len(top_u), len(top_i), 1)
+
+        pdf.set_font("helvetica", "", 8)
+        for i in range(max_linhas):
+            y_linha = pdf.get_y()
+            # Coluna Utilizador
+            pdf.set_xy(10, y_linha)
+            if i < len(top_u):
+                u_nome, u_qtd = top_u[i]
+                pdf.cell(65, 5, f"{i+1}. {u_nome[:30]}", border=1)
+                pdf.cell(27, 5, str(u_qtd), border=1, align="C")
+            else:
+                pdf.cell(65, 5, "-", border=1)
+                pdf.cell(27, 5, "-", border=1, align="C")
+
+            # Coluna IP
+            pdf.set_xy(107, y_linha)
+            if i < len(top_i):
+                ip_nome, ip_qtd = top_i[i]
+                pdf.cell(66, 5, f"{i+1}. {ip_nome[:30]}", border=1)
+                pdf.cell(27, 5, str(ip_qtd), border=1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            else:
+                pdf.cell(66, 5, "-", border=1)
+                pdf.cell(27, 5, "-", border=1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        pdf.ln(5)
+
+        # 3. PADRÕES DE FORÇA BRUTA COM CAIXAS COLORIDAS POR GRAVIDADE
+        pdf.set_font("helvetica", "B", 11)
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 6, "3. Padroes de Forca Bruta Detetados (Alertas)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        if not alertas_brute_force:
+            pdf.set_font("helvetica", "I", 9)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(0, 6, "Nenhum padrao suspeito de forca bruta foi identificado nos logs.", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(3)
+        else:
+            for alerta in alertas_brute_force:
+                gravidade = alerta["gravidade"].upper()
+
+                # Definição das cores baseada na gravidade
+                if gravidade == "ALTO":
+                    # Fundo vermelho suave, borda vermelha, texto escuro
+                    cor_fundo = (254, 226, 226)
+                    cor_borda = (220, 38, 38)
+                    cor_texto = (153, 27, 27)
+                elif gravidade == "MÉDIO" or gravidade == "MEDIO":
+                    # Fundo amarelo/laranja suave, borda laranja
+                    cor_fundo = (254, 243, 199)
+                    cor_borda = (217, 119, 6)
+                    cor_texto = (146, 64, 14)
+                else:
+                    # BAIXO: Fundo azul suave, borda azul
+                    cor_fundo = (224, 242, 254)
+                    cor_borda = (2, 132, 199)
+                    cor_texto = (7, 89, 133)
+
+                # Caixa de Alerta
+                x_alerta = 10
+                y_alerta = pdf.get_y()
+                altura_alerta = 25
+
+                # Quebra de página suave caso não caiba
+                if y_alerta + altura_alerta > 270:
+                    pdf.add_page()
+                    y_alerta = pdf.get_y()
+
+                pdf.set_fill_color(*cor_fundo)
+                pdf.set_draw_color(*cor_borda)
+                pdf.rect(x_alerta, y_alerta, 190, altura_alerta, "DF")
+
+                # Cabeçalho do alerta com badge
+                pdf.set_xy(x_alerta + 3, y_alerta + 2)
+                pdf.set_font("helvetica", "B", 9)
+                pdf.set_text_color(*cor_texto)
+                pdf.cell(0, 5, f"[ALERTA - GRAVIDADE {gravidade}] IP de Origem: {alerta['ip']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+                # Detalhes do alerta
+                pdf.set_font("helvetica", "", 8)
+                pdf.set_text_color(51, 65, 85)
+                pdf.set_xy(x_alerta + 5, y_alerta + 7)
+                pdf.cell(90, 4, f"- Falhas na Janela: {alerta['falhas_janela']} tentativas em <= {JANELA_MINUTOS_BRUTE_FORCE} minutos")
+                pdf.cell(0, 4, f"- Total de Falhas deste IP: {alerta['total_falhas_ip']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+                pdf.set_xy(x_alerta + 5, y_alerta + 12)
+                pdf.cell(0, 4, f"- Periodo do Ataque: {alerta['inicio']} ate {alerta['fim']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+                pdf.set_xy(x_alerta + 5, y_alerta + 17)
+                alvos_str = ", ".join(alerta["utilizadores"][:6])
+                if len(alerta["utilizadores"]) > 6:
+                    alvos_str += f" e mais {len(alerta['utilizadores']) - 6} contas"
+                pdf.cell(0, 4, f"- Contas Visadas: {alvos_str}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+                pdf.set_xy(10, y_alerta + altura_alerta + 3)
+
+        pdf.ln(3)
+
+        # 4. CONTAS BLOQUEADAS (EVENTO 4740)
+        if dados["contas_bloqueadas"]:
+            # Verifica quebra de página
+            if pdf.get_y() > 240:
+                pdf.add_page()
+
+            pdf.set_font("helvetica", "B", 11)
+            pdf.set_text_color(15, 23, 42)
+            pdf.cell(0, 6, "4. Detalhe de Contas Bloqueadas no Sistema (Evento 4740)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            pdf.set_fill_color(241, 245, 249)
+            pdf.set_draw_color(203, 213, 225)
+            pdf.set_font("helvetica", "B", 8)
+            pdf.set_text_color(51, 65, 85)
+            pdf.cell(60, 6, "Conta Bloqueada", border=1, fill=True)
+            pdf.cell(65, 6, "Data e Hora do Bloqueio", border=1, fill=True)
+            pdf.cell(65, 6, "Computador / Origem", border=1, fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            pdf.set_font("helvetica", "", 8)
+            for b in dados["contas_bloqueadas"]:
+                pdf.cell(60, 5, b["utilizador"][:30], border=1)
+                pdf.cell(65, 5, b["hora"][:30], border=1)
+                pdf.cell(65, 5, b["computador"][:30], border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        pdf.output(caminho_saida)
         return True, None
     except Exception as e:
         return False, str(e)
@@ -554,7 +797,6 @@ def main():
         python analisador.py caminho/do/ficheiro.log
     Ou solicita interativamente caso nenhum argumento seja passado.
     """
-    # Determina o ficheiro a analisar
     if len(sys.argv) > 1:
         caminho_ficheiro = sys.argv[1]
     else:
@@ -569,21 +811,18 @@ def main():
         print("Erro: Nenhum caminho de ficheiro foi indicado.")
         return
 
-    # Lê o ficheiro
     linhas, erro = ler_linhas_ficheiro(caminho_ficheiro)
     if erro:
         print(erro)
         return
 
-    # Verifica se o ficheiro está vazio
     linhas_com_conteudo = [l for l in linhas if l.strip()]
     if not linhas_com_conteudo:
         mensagem_vazio = f"Aviso: O ficheiro '{caminho_ficheiro}' está vazio. Não há dados para analisar."
         print("\n" + mensagem_vazio)
-        salvar_relatorio(mensagem_vazio + "\n")
+        salvar_relatorio_txt(mensagem_vazio + "\n")
         return
 
-    # Deteta o formato (Windows CSV ou Linux auth.log)
     formato = detetar_formato(linhas)
     if formato == "WINDOWS":
         dados = analisar_logs_windows(linhas)
@@ -594,28 +833,35 @@ def main():
         print("A ferramenta aceita CSV do Visualizador de Eventos do Windows ou ficheiro auth.log do Linux.")
         return
 
-    # Se não houver dados úteis extraídos
     if dados["total_falhas"] == 0 and dados["total_sucessos"] == 0 and dados["total_bloqueios"] == 0:
         mensagem_sem_dados = f"Aviso: O ficheiro '{caminho_ficheiro}' não contém eventos relevantes de login ou segurança."
         print("\n" + mensagem_sem_dados)
-        salvar_relatorio(mensagem_sem_dados + "\n")
+        salvar_relatorio_txt(mensagem_sem_dados + "\n")
         return
 
     # Deteta padrões de força bruta
     alertas_brute_force = detetar_padroes_brute_force(dados["falhas_timestamps_por_ip"])
 
-    # Gera o relatório formatado
+    # Gera o relatório em texto para terminal e ficheiro .txt
     relatorio_texto = gerar_texto_relatorio(dados, alertas_brute_force)
-
-    # Imprime no terminal
     print("\n" + relatorio_texto)
 
-    # Guarda no ficheiro relatorio.txt
-    sucesso, erro_salvar = salvar_relatorio(relatorio_texto)
-    if sucesso:
-        print(f"\n[+] Relatório guardado com sucesso no ficheiro '{FICHEIRO_RELATORIO_SAIDA}'.\n")
+    # 1. Guarda em .txt
+    sucesso_txt, erro_txt = salvar_relatorio_txt(relatorio_texto)
+    if sucesso_txt:
+        print(f"[+] Relatório em texto guardado em '{FICHEIRO_RELATORIO_TXT}'.")
     else:
-        print(f"\n[-] Erro ao guardar o ficheiro de relatório: {erro_salvar}\n")
+        print(f"[-] Erro ao guardar ficheiro .txt: {erro_txt}")
+
+    # 2. Guarda em PDF (se fpdf2 estiver disponível)
+    if FPDF_DISPONIVEL:
+        sucesso_pdf, erro_pdf = gerar_relatorio_pdf(dados, alertas_brute_force, FICHEIRO_RELATORIO_PDF)
+        if sucesso_pdf:
+            print(f"[+] Relatório executivo em PDF guardado com sucesso em '{FICHEIRO_RELATORIO_PDF}'.\n")
+        else:
+            print(f"[-] Erro ao gerar ficheiro PDF: {erro_pdf}\n")
+    else:
+        print("[i] Dica: Instale 'fpdf2' (pip install fpdf2) para gerar automaticamente o relatório em PDF com alertas coloridos.\n")
 
 
 if __name__ == "__main__":
