@@ -31,6 +31,9 @@ Além disso, contabiliza os sucessos legítimos e lista detalhadamente as **cont
 - **Motores de Deteção Inteligente (Python Puro)**:
   - **Força Bruta Concentrada**: janela deslizante que identifica rajadas de tentativas repetidas contra a mesma conta.
   - **Password Spraying**: análise de dispersão que identifica quando um mesmo IP ataca 4 ou mais contas distintas com poucas tentativas por conta.
+- **Arquitetura Híbrida de Performance (Dual-Engine)**:
+  - Motor leve nativo para o dia a dia (sem dependências externas pesadas).
+  - Aceleração vetorial com **Pandas** ativada automaticamente para logs volumosos (>50MB) ou via flag `--pandas`.
 - **Suporte Multiplataforma**:
   - **Windows**: ficheiros CSV exportados do Visualizador de Eventos (*Event Viewer* - Segurança).
   - **Linux**: ficheiros de texto do serviço SSH (`/var/log/auth.log` ou `/var/log/secure`).
@@ -96,6 +99,9 @@ python analisador.py exemplo_windows.csv
 
 # Analisar logs do Linux (auth.log)
 python analisador.py exemplo_auth.log
+
+# Opcional: Forçar aceleração vetorial com Pandas (se instalado)
+python analisador.py exemplo_windows.csv --pandas
 ```
 
 ### 3. Execução em Modo Interativo
@@ -179,7 +185,7 @@ As melhorias planeadas para o projeto, por ordem de construção:
 - [x] **5. Exportação em JSON**: gerar o relatório em formato JSON estruturado para ingestão por SIEMs (Splunk, Elastic, Microsoft Sentinel).
 - [x] **6. Enriquecimento de IPs com AbuseIPDB**: consulta automatizada à API gratuita para verificar a reputação e índice de confiança de maliciosidade do IP.
 - [x] **7. Explicação por IA com Google Gemini**: resumo automático e geração de recomendações de mitigação e próximos passos via API do Gemini.
-- [ ] **8. Otimização de Performance com Pandas**: processamento em larga escala apenas quando os ficheiros de log atingirem gigabytes.
+- [x] **8. Otimização de Performance com Pandas**: processamento em larga escala vetorial para ficheiros volumosos (>50MB), com deteção e ativação automática.
 
 ---
 

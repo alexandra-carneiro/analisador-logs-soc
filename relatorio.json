@@ -1,35 +1,27 @@
 {
-  "@timestamp": "2026-11-10T12:35:36.070018Z",
+  "@timestamp": "2026-11-10T12:54:54.877692Z",
   "ferramenta": "analisador-logs-soc",
-  "formato_origem": "Windows (CSV)",
+  "formato_origem": "Linux (auth.log / sshd)",
   "metricas_gerais": {
-    "total_falhas": 31,
-    "total_sucessos": 7,
-    "total_bloqueios": 2,
+    "total_falhas": 33,
+    "total_sucessos": 5,
+    "total_bloqueios": 0,
     "total_logons_fora_de_horas": 1,
-    "total_contas_criadas": 1,
-    "total_adicoes_grupo_privilegiado": 1,
-    "total_logons_superprivilegiados": 1
+    "total_contas_criadas": 0,
+    "total_adicoes_grupo_privilegiado": 0,
+    "total_logons_superprivilegiados": 0
   },
   "top_utilizadores_falhas": [
     {
-      "utilizador": "administrador",
-      "falhas": 21
-    },
-    {
-      "utilizador": "carlos",
-      "falhas": 2
-    },
-    {
-      "utilizador": "administrator",
-      "falhas": 1
-    },
-    {
       "utilizador": "admin",
-      "falhas": 1
+      "falhas": 22
     },
     {
       "utilizador": "root",
+      "falhas": 2
+    },
+    {
+      "utilizador": "test",
       "falhas": 1
     },
     {
@@ -41,110 +33,91 @@
       "falhas": 1
     },
     {
+      "utilizador": "deploy",
+      "falhas": 1
+    },
+    {
+      "utilizador": "git",
+      "falhas": 1
+    },
+    {
+      "utilizador": "ansible",
+      "falhas": 1
+    },
+    {
+      "utilizador": "dev",
+      "falhas": 1
+    },
+    {
       "utilizador": "backup",
-      "falhas": 1
-    },
-    {
-      "utilizador": "gestor",
-      "falhas": 1
-    },
-    {
-      "utilizador": "financeiro",
       "falhas": 1
     }
   ],
   "top_ips_falhas": [
     {
-      "ip": "203.0.113.50",
+      "ip": "203.0.113.199",
       "falhas": 21
     },
     {
-      "ip": "198.51.100.25",
-      "falhas": 8
+      "ip": "198.51.100.77",
+      "falhas": 11
     },
     {
-      "ip": "192.168.1.45",
-      "falhas": 2
+      "ip": "192.168.1.200",
+      "falhas": 1
     }
   ],
   "alertas_forca_bruta": [
     {
-      "ip": "203.0.113.50",
+      "ip": "203.0.113.199",
       "gravidade": "Alto",
       "falhas_janela": 21,
       "total_falhas_ip": 21,
-      "inicio": "10/11/2026 10:10:02",
-      "fim": "10/11/2026 10:14:30",
+      "inicio": "10/11/2026 11:15:02",
+      "fim": "10/11/2026 11:19:40",
       "utilizadores": [
-        "administrador"
+        "admin"
       ]
     }
   ],
   "alertas_password_spraying": [
     {
-      "ip": "198.51.100.25",
+      "ip": "198.51.100.77",
       "gravidade": "Médio",
       "contas_visadas": [
-        "administrator",
         "admin",
+        "test",
         "root",
         "guest",
         "suporte",
-        "backup",
-        "gestor",
-        "financeiro"
+        "deploy",
+        "git",
+        "ansible",
+        "dev",
+        "backup"
       ],
-      "total_contas": 8,
-      "total_tentativas": 8,
-      "media_por_conta": 1.0,
-      "inicio": "10/11/2026 10:02:15",
-      "fim": "10/11/2026 10:06:15"
+      "total_contas": 10,
+      "total_tentativas": 11,
+      "media_por_conta": 1.1,
+      "inicio": "10/11/2026 11:00:10",
+      "fim": "10/11/2026 11:05:40"
     }
   ],
   "threat_intelligence_abuseipdb": {},
   "parecer_ia_gemini": null,
   "logons_fora_de_horas": [
     {
-      "utilizador": "tiago",
-      "ip": "198.51.100.99",
-      "hora": "10/11/2026 03:22:10",
-      "computador": "SRV-AD01",
-      "motivo": "Fora do Expediente (03:22)"
+      "utilizador": "backup_admin",
+      "ip": "198.51.100.88",
+      "hora": "10/11/2026 02:14:05",
+      "computador": "Servidor Linux (SSH)",
+      "motivo": "Fora do Expediente (02:14)"
     }
   ],
-  "contas_bloqueadas": [
-    {
-      "utilizador": "administrador",
-      "hora": "10/11/2026 10:14:35",
-      "computador": "SRV-AD01"
-    },
-    {
-      "utilizador": "financeiro",
-      "hora": "10/11/2026 10:15:00",
-      "computador": "SRV-AD01"
-    }
-  ],
+  "contas_bloqueadas": [],
   "eventos_privilegios_windows": {
-    "contas_criadas": [
-      {
-        "utilizador": "svc_temp_backdoor",
-        "hora": "10/11/2026 10:17:15",
-        "computador": "SRV-AD01"
-      }
-    ],
-    "membros_adicionados_grupo": [
-      {
-        "utilizador": "svc_temp_backdoor",
-        "hora": "10/11/2026 10:17:40",
-        "computador": "SRV-AD01"
-      }
-    ],
-    "logons_privilegios_especiais": [
-      {
-        "utilizador": "svc_temp_backdoor",
-        "hora": "10/11/2026 10:18:05",
-        "computador": "SRV-AD01"
-      }
-    ]
+    "contas_criadas": [],
+    "membros_adicionados_grupo": [],
+    "logons_privilegios_especiais": []
   }
 }

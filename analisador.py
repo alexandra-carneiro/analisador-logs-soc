@@ -36,6 +36,16 @@ try:
 except ImportError:
     REQUESTS_DISPONIVEL = False
 
+# Tentativa de importação opcional do Pandas para logs em larga escala (>50MB)
+try:
+    import pandas as pd
+    PANDAS_DISPONIVEL = True
+except ImportError:
+    PANDAS_DISPONIVEL = False
+
+# Limiar de tamanho de ficheiro para acionar ou sugerir aceleração vetorial com Pandas (50 MB)
+LIMIAR_TAMANHO_PANDAS_BYTES = 50 * 1024 * 1024
+
 
 # ==============================================================================
 # CONFIGURAÇÃO DE APIS EXTERNAS (AbuseIPDB & Google Gemini)
@@ -366,6 +376,138 @@ def analisar_logs_windows(linhas):
         "logons_privilegios_especiais": logons_privilegios_especiais,
         "logons_fora_de_horas": logons_fora_de_horas
     }
+
+
+def analisar_windows_com_pandas(caminho_ficheiro):
+    """
+    Processamento de alta velocidade de logs do Windows CSV utilizando o Pandas.
+    Ativado automaticamente para ficheiros grandes (>50MB) quando o pacote estiver instalado,
+    ou através da flag --pandas na linha de comandos.
+    """
+    if not PANDAS_DISPONIVEL:
+        return None
+
+    try:
+        with open(caminho_ficheiro, mode="r", encoding="utf-8-sig", errors="replace") as f:
+            amostra = f.readline()
+        sep = ";" if amostra.count(";") > amostra.count(",") else ","
+
+        df = pd.read_csv(caminho_ficheiro, sep=sep, dtype=str, keep_default_na=False)
+
+        def encontrar_coluna(chaves):
+            for c in df.columns:
+                c_norm = c.strip().lower()
+                if any(k in c_norm for k in chaves):
+                    return c
+            return None
+
+        col_id = encontrar_coluna(["id do evento", "event id", "eventid", "id"])
+        col_data = encontrar_coluna(["data e hora", "date and time", "timecreated", "timestamp", "data"])
+        col_user = encontrar_coluna(["utilizador", "user", "targetusername", "account name", "nome"])
+        col_ip = encontrar_coluna(["ip de origem", "source ip", "ipaddress", "endereço", "ip"])
+        col_comp = encontrar_coluna(["computador", "computer", "computername"])
+
+        if not col_id:
+            return None
+
+        df[col_id] = df[col_id].astype(str).str.strip()
+
+        total_falhas = int((df[col_id] == "4625").sum())
+        total_sucessos = int((df[col_id] == "4624").sum())
+
+        df_falhas = df[df[col_id] == "4625"]
+
+        if col_user:
+            df_users = df_falhas[col_user].replace(["", "-"], "Desconhecido")
+            u_counts = df_users.value_counts().to_dict()
+        else:
+            u_counts = {}
+
+        if col_ip:
+            df_ips = df_falhas[col_ip].replace(["", "-"], "Desconhecido / Local")
+            ip_counts = df_ips.value_counts().to_dict()
+        else:
+            ip_counts = {}
+
+        falhas_por_utilizador = Counter(u_counts)
+        falhas_por_ip = Counter(ip_counts)
+
+        falhas_timestamps_por_ip = {}
+        for _, row in df_falhas.iterrows():
+            ip = row[col_ip].strip() if col_ip and row[col_ip] and row[col_ip] != "-" else "Desconhecido / Local"
+            user = row[col_user].strip() if col_user and row[col_user] and row[col_user] != "-" else "Desconhecido"
+            dt = converter_data_windows(row[col_data]) if col_data else None
+            if ip not in falhas_timestamps_por_ip:
+                falhas_timestamps_por_ip[ip] = []
+            falhas_timestamps_por_ip[ip].append({"tempo": dt, "utilizador": user})
+
+        contas_bloqueadas = []
+        df_4740 = df[df[col_id] == "4740"]
+        for _, row in df_4740.iterrows():
+            contas_bloqueadas.append({
+                "utilizador": row[col_user].strip() if col_user and row[col_user] and row[col_user] != "-" else "Desconhecido",
+                "hora": row[col_data].strip() if col_data and row[col_data] else "Hora desconhecida",
+                "computador": row[col_comp].strip() if col_comp and row[col_comp] else "-"
+            })
+
+        contas_criadas = []
+        df_4720 = df[df[col_id] == "4720"]
+        for _, row in df_4720.iterrows():
+            contas_criadas.append({
+                "utilizador": row[col_user].strip() if col_user and row[col_user] and row[col_user] != "-" else "Desconhecido",
+                "hora": row[col_data].strip() if col_data and row[col_data] else "Hora desconhecida",
+                "computador": row[col_comp].strip() if col_comp and row[col_comp] else "-"
+            })
+
+        membros_adicionados_grupo = []
+        df_4728 = df[df[col_id] == "4728"]
+        for _, row in df_4728.iterrows():
+            membros_adicionados_grupo.append({
+                "utilizador": row[col_user].strip() if col_user and row[col_user] and row[col_user] != "-" else "Desconhecido",
+                "hora": row[col_data].strip() if col_data and row[col_data] else "Hora desconhecida",
+                "computador": row[col_comp].strip() if col_comp and row[col_comp] else "-"
+            })
+
+        logons_privilegios_especiais = []
+        df_4672 = df[df[col_id] == "4672"]
+        for _, row in df_4672.iterrows():
+            logons_privilegios_especiais.append({
+                "utilizador": row[col_user].strip() if col_user and row[col_user] and row[col_user] != "-" else "Desconhecido",
+                "hora": row[col_data].strip() if col_data and row[col_data] else "Hora desconhecida",
+                "computador": row[col_comp].strip() if col_comp and row[col_comp] else "-"
+            })
+
+        logons_fora_de_horas = []
+        df_4624 = df[df[col_id] == "4624"]
+        if col_data:
+            for _, row in df_4624.iterrows():
+                dt = converter_data_windows(row[col_data])
+                e_fora, motivo = verificar_fora_de_horas(dt)
+                if e_fora:
+                    logons_fora_de_horas.append({
+                        "utilizador": row[col_user].strip() if col_user and row[col_user] and row[col_user] != "-" else "Desconhecido",
+                        "ip": row[col_ip].strip() if col_ip and row[col_ip] and row[col_ip] != "-" else "Desconhecido / Local",
+                        "hora": row[col_data].strip() if row[col_data] else "Hora desconhecida",
+                        "computador": row[col_comp].strip() if col_comp and row[col_comp] else "-",
+                        "motivo": motivo
+                    })
+
+        return {
+            "formato": "Windows (CSV - Motor Acelerado Pandas)",
+            "total_falhas": total_falhas,
+            "total_sucessos": total_sucessos,
+            "total_bloqueios": len(contas_bloqueadas),
+            "falhas_por_utilizador": falhas_por_utilizador,
+            "falhas_por_ip": falhas_por_ip,
+            "falhas_timestamps_por_ip": falhas_timestamps_por_ip,
+            "contas_bloqueadas": contas_bloqueadas,
+            "contas_criadas": contas_criadas,
+            "membros_adicionados_grupo": membros_adicionados_grupo,
+            "logons_privilegios_especiais": logons_privilegios_especiais,
+            "logons_fora_de_horas": logons_fora_de_horas
+        }
+    except Exception:
+        return None
 
 
 # ==============================================================================
@@ -1472,10 +1614,15 @@ def main():
     Ponto de entrada da ferramenta.
     Pode receber o caminho do ficheiro por argumento na linha de comandos:
         python analisador.py caminho/do/ficheiro.log
+    Suporta a flag opcional --pandas para acionar o motor acelerado de leitura vetorial.
     Ou solicita interativamente caso nenhum argumento seja passado.
     """
-    if len(sys.argv) > 1:
-        caminho_ficheiro = sys.argv[1]
+    argumentos = sys.argv[1:]
+    forcar_pandas = "--pandas" in argumentos
+    caminhos = [a for a in argumentos if not a.startswith("--")]
+
+    if caminhos:
+        caminho_ficheiro = caminhos[0]
     else:
         print("--- Analisador de Logs para SOC ---")
         try:
@@ -1487,6 +1634,13 @@ def main():
     if not caminho_ficheiro:
         print("Erro: Nenhum caminho de ficheiro foi indicado.")
         return
+
+    if not os.path.exists(caminho_ficheiro):
+        print(f"Erro: O ficheiro '{caminho_ficheiro}' não foi encontrado.")
+        return
+
+    tamanho_bytes = os.path.getsize(caminho_ficheiro)
+    eh_volumoso = tamanho_bytes > LIMIAR_TAMANHO_PANDAS_BYTES
 
     linhas, erro = ler_linhas_ficheiro(caminho_ficheiro)
     if erro:
@@ -1501,8 +1655,27 @@ def main():
         return
 
     formato = detetar_formato(linhas)
+    dados = None
+
     if formato == "WINDOWS":
-        dados = analisar_logs_windows(linhas)
+        if forcar_pandas or eh_volumoso:
+            if PANDAS_DISPONIVEL:
+                tamanho_mb = tamanho_bytes / (1024 * 1024)
+                print(f"[i] A utilizar motor de alta performance acelerado com Pandas ({tamanho_mb:.1f} MB)...")
+                dados = analisar_windows_com_pandas(caminho_ficheiro)
+                if dados is None:
+                    print("[-] Aviso: Processamento com Pandas não concluído. A recorrer ao motor nativo.")
+                    dados = analisar_logs_windows(linhas)
+            else:
+                if forcar_pandas:
+                    print("[-] Flag --pandas detetada, mas a biblioteca 'pandas' não está instalada.")
+                if eh_volumoso:
+                    tamanho_mb = tamanho_bytes / (1024 * 1024)
+                    print(f"[i] Ficheiro volumoso ({tamanho_mb:.1f} MB). Dica: Instale 'pandas' (pip install pandas) para acelerar a análise com processamento vetorial.")
+                dados = analisar_logs_windows(linhas)
+        else:
+            dados = analisar_logs_windows(linhas)
+
     elif formato == "LINUX":
         dados = analisar_logs_linux(linhas)
     else:

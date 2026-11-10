@@ -146,3 +146,19 @@ A ferramenta lê as primeiras linhas do ficheiro e adapta-se automaticamente:
 1. **Ficheiro Vazio**: se o ficheiro estiver sem dados, emite um aviso seguro e amigável sem provocar erros no programa.
 2. **Formato Linux**: identifica linhas típicas do serviço OpenSSH (`sshd`, `failed password`, `accepted password`).
 3. **Formato Windows CSV**: identifica cabeçalhos ou campos típicos do Visualizador de Eventos (`ID do evento`, `4625`, `4624`, `4740`).
+
+---
+
+## 10. Arquitetura Híbrida de Processamento (Dual-Engine: Nativo vs. Pandas)
+
+Para garantir máxima versatilidade e conformidade com as restrições operacionais de equipas de SOC, a ferramenta adota uma arquitetura em dois motores:
+
+1. **Motor Padrão Ultraleve (Python Standard Library)**:
+   - Ativo por defeito para ficheiros de dimensões normais (até 50 MB).
+   - Executa 100% com a biblioteca padrão do Python (`csv`, `collections`, `datetime`, `re`).
+   - Não requer a instalação de pacotes pesados ou de compiladores C/C++, tornando a ferramenta imediatamente utilizável em qualquer estação de trabalho ou máquina isolada (*air-gapped*).
+
+2. **Motor Acelerado Vetorial (Pandas)**:
+   - Acionado automaticamente quando o ficheiro de log do Windows excede **50 MB** (`LIMIAR_TAMANHO_PANDAS_BYTES = 50 * 1024 * 1024`) ou manualmente via flag `--pandas`.
+   - Utiliza processamento em colunas (*vectorized operations*) e estruturas em C do `pandas`, permitindo filtrar milhões de linhas de eventos e calcular agregações em poucos segundos.
+   - Caso o ficheiro seja volumoso e a biblioteca `pandas` não esteja instalada no ambiente, a ferramenta emite um aviso informativo e recorre com segurança ao motor nativo, garantindo que o analista nunca fica bloqueado.
