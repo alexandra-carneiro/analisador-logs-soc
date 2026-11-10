@@ -38,17 +38,18 @@ except ImportError:
 
 
 # ==============================================================================
-# CONFIGURAÇÃO DE THREAT INTELLIGENCE (AbuseIPDB)
+# CONFIGURAÇÃO DE APIS EXTERNAS (AbuseIPDB & Google Gemini)
 # ==============================================================================
-# Carrega a chave de API da AbuseIPDB a partir do ambiente ou ficheiro local .env
+# Carrega as chaves de API a partir do ambiente ou ficheiro local .env
 ABUSEIPDB_API_KEY = os.environ.get("ABUSEIPDB_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 def carregar_chaves_env_local():
     """
     Carrega chaves de API a partir de um ficheiro .env local caso existam,
     sem necessitar de bibliotecas de terceiros como python-dotenv.
     """
-    global ABUSEIPDB_API_KEY
+    global ABUSEIPDB_API_KEY, GEMINI_API_KEY
     caminho_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if os.path.exists(caminho_env):
         try:
@@ -61,6 +62,8 @@ def carregar_chaves_env_local():
                         valor = valor.strip().strip('"').strip("'")
                         if chave == "ABUSEIPDB_API_KEY" and not ABUSEIPDB_API_KEY:
                             ABUSEIPDB_API_KEY = valor
+                        elif chave == "GEMINI_API_KEY" and not GEMINI_API_KEY:
+                            GEMINI_API_KEY = valor
         except Exception:
             pass
 
@@ -722,10 +725,77 @@ def enriquecer_ips_com_abuseipdb(ips_para_analisar, api_key=ABUSEIPDB_API_KEY):
 
 
 # ==============================================================================
+# ANÁLISE E PARECER TÉCNICO COM IA (GOOGLE GEMINI)
+# ==============================================================================
+
+def gerar_analise_ia_gemini(dados, alertas_brute_force, alertas_spray, dados_abuseipdb=None, api_key=GEMINI_API_KEY):
+    """
+    Envia o resumo do incidente para a API do Google Gemini,
+    solicitando uma análise profissional de Analista de SOC L3 com recomendações imediatas.
+    """
+    if not REQUESTS_DISPONIVEL or not api_key:
+        return None
+
+    resumo_prompt = f"""
+Atue como um Especialista de Segurança e Analista Sênior de SOC (Nível 3).
+Analise o seguinte relatório consolidado de logs ({dados['formato']}):
+- Total de falhas de login: {dados['total_falhas']}
+- Total de logins bem-sucedidos: {dados['total_sucessos']}
+- Contas bloqueadas: {dados['total_bloqueios']}
+- Logons fora do expediente: {len(dados.get('logons_fora_de_horas', []))}
+- Contas criadas (persistência): {len(dados.get('contas_criadas', []))}
+- Adições a grupos privilegiados: {len(dados.get('membros_adicionados_grupo', []))}
+- Logons com superprivilégios: {len(dados.get('logons_privilegios_especiais', []))}
+
+Alertas de Força Bruta: {len(alertas_brute_force)} incidentes
+Alertas de Password Spraying: {len(alertas_spray)} incidentes
+Top IPs de Ataque: {[ip for ip, _ in dados['falhas_por_ip'].most_common(5)]}
+Threat Intelligence AbuseIPDB: {dados_abuseipdb if dados_abuseipdb else 'Nenhuma consulta externa realizada'}
+
+Elabore um parecer técnico e direto em Português (máximo 12 a 15 linhas) contendo:
+1. DIAGNÓSTICO: Explicação clara da ameaça e vetor de ataque observado.
+2. AVALIAÇÃO DE RISCO: Gravidade e potencial impacto (ex.: comprometimento de credenciais, persistência).
+3. PLANO DE AÇÃO: Recomendações imediatas e priorizadas para a equipa de defesa / SOC.
+"""
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [
+            {
+                "parts": [{"text": resumo_prompt}]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 600
+        }
+    }
+
+    try:
+        resposta = requests.post(url, headers=headers, json=payload, timeout=12)
+        if resposta.status_code == 200:
+            resp_json = resposta.json()
+            candidatos = resp_json.get("candidates", [])
+            if candidatos:
+                conteudo = candidatos[0].get("content", {}).get("parts", [])
+                if conteudo:
+                    return conteudo[0].get("text", "").strip()
+        elif resposta.status_code in (400, 403):
+            return "Aviso: Chave de API do Gemini inválida ou sem permissões de acesso ao modelo."
+        else:
+            return f"Aviso: Não foi possível obter análise da IA (Status HTTP {resposta.status_code})."
+    except Exception as e:
+        return f"Aviso: Falha na conexão com a API do Gemini ({type(e).__name__})."
+
+    return None
+
+
+# ==============================================================================
 # GERAÇÃO DO RELATÓRIO: TEXTO E CONSOLA
 # ==============================================================================
 
-def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray, dados_abuseipdb=None):
+def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray, dados_abuseipdb=None, parecer_ia=None):
     """
     Constrói o texto final do relatório em português claro e objetivo,
     pronto para impressão no terminal e gravação em ficheiro .txt.
@@ -883,6 +953,20 @@ def gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray, dados_abuse
             linhas.append("  Nenhum IP público relevante identificado para consulta na AbuseIPDB.")
         linhas.append("")
 
+    # 10. ANÁLISE E PARECER TÉCNICO POR IA (GOOGLE GEMINI)
+    linhas.append("10. ANÁLISE POR INTELIGÊNCIA ARTIFICIAL (GOOGLE GEMINI)")
+    linhas.append(sub_separador)
+    if parecer_ia:
+        linhas.append(parecer_ia)
+        linhas.append("")
+    else:
+        if not GEMINI_API_KEY:
+            linhas.append("  [i] Análise de IA desativada. Para ativar a explicação automática do Gemini,")
+            linhas.append("      defina a chave gratuita na variável GEMINI_API_KEY ou num ficheiro .env local.")
+        else:
+            linhas.append("  Não foi possível obter parecer do Gemini para esta execução.")
+        linhas.append("")
+
     linhas.append(separador)
     linhas.append("Fim do relatório.")
     linhas.append(separador)
@@ -902,7 +986,7 @@ def salvar_relatorio_txt(texto_relatorio, caminho_saida=FICHEIRO_RELATORIO_TXT):
         return False, str(e)
 
 
-def salvar_relatorio_json(dados, alertas_brute_force, alertas_spray, dados_abuseipdb=None, caminho_saida=FICHEIRO_RELATORIO_JSON):
+def salvar_relatorio_json(dados, alertas_brute_force, alertas_spray, dados_abuseipdb=None, parecer_ia=None, caminho_saida=FICHEIRO_RELATORIO_JSON):
     """
     Grava os dados da análise num ficheiro JSON estruturado,
     ideal para ingestão automatizada por SIEMs (Splunk, Elastic, Sentinel) ou SOARs.
@@ -930,6 +1014,7 @@ def salvar_relatorio_json(dados, alertas_brute_force, alertas_spray, dados_abuse
             "alertas_forca_bruta": alertas_brute_force,
             "alertas_password_spraying": alertas_spray,
             "threat_intelligence_abuseipdb": dados_abuseipdb if dados_abuseipdb else {},
+            "parecer_ia_gemini": parecer_ia,
             "logons_fora_de_horas": dados.get("logons_fora_de_horas", []),
             "contas_bloqueadas": dados.get("contas_bloqueadas", []),
             "eventos_privilegios_windows": {
@@ -977,7 +1062,7 @@ if FPDF_DISPONIVEL:
             self.cell(0, 10, f"Pagina {self.page_no()} | analisador-logs-soc - Documento Confidencial de Uso Interno", align="C")
 
 
-def gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, dados_abuseipdb=None, caminho_saida=FICHEIRO_RELATORIO_PDF):
+def gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, dados_abuseipdb=None, parecer_ia=None, caminho_saida=FICHEIRO_RELATORIO_PDF):
     """
     Gera um relatório profissional em PDF usando fpdf2.
     Inclui cabeçalho executivo, tabelas limpas e alertas com cores de gravidade.
@@ -1354,6 +1439,24 @@ def gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, dados_abuseip
                     pdf.cell(65, 5, info_cons.get("isp", "N/D")[:35], border=1)
                     pdf.cell(30, 5, str(info_cons.get("total_denuncias", 0)), border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
+        # 9. PARECER TÉCNICO POR IA (GOOGLE GEMINI)
+        if parecer_ia:
+            if pdf.get_y() > 210:
+                pdf.add_page()
+            else:
+                pdf.ln(3)
+
+            pdf.set_font("helvetica", "B", 11)
+            pdf.set_text_color(15, 23, 42)
+            pdf.cell(0, 6, "9. Parecer de Seguranca por IA (Google Gemini - SOC Assistant)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            pdf.set_fill_color(248, 250, 252)
+            pdf.set_draw_color(148, 163, 184)
+            pdf.set_font("helvetica", "", 8)
+            pdf.set_text_color(30, 41, 59)
+            texto_ia_sanitizado = parecer_ia.encode("latin-1", "replace").decode("latin-1")
+            pdf.multi_cell(190, 4.5, texto_ia_sanitizado, border=1, fill=True)
+
         pdf.output(caminho_saida)
         return True, None
     except Exception as e:
@@ -1428,8 +1531,11 @@ def main():
     ))
     dados_abuseipdb = enriquecer_ips_com_abuseipdb(ips_suspeitos)
 
+    # 4. Análise opcional com IA (Google Gemini)
+    parecer_ia = gerar_analise_ia_gemini(dados, alertas_brute_force, alertas_spray, dados_abuseipdb)
+
     # Gera o relatório em texto para terminal e ficheiro .txt
-    relatorio_texto = gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray, dados_abuseipdb)
+    relatorio_texto = gerar_texto_relatorio(dados, alertas_brute_force, alertas_spray, dados_abuseipdb, parecer_ia)
     print("\n" + relatorio_texto)
 
     # 1. Guarda em .txt
@@ -1440,7 +1546,7 @@ def main():
         print(f"[-] Erro ao guardar ficheiro .txt: {erro_txt}")
 
     # 2. Guarda em JSON (estruturado para SIEMs e outras ferramentas)
-    sucesso_json, erro_json = salvar_relatorio_json(dados, alertas_brute_force, alertas_spray, dados_abuseipdb)
+    sucesso_json, erro_json = salvar_relatorio_json(dados, alertas_brute_force, alertas_spray, dados_abuseipdb, parecer_ia)
     if sucesso_json:
         print(f"[+] Relatório estruturado em JSON guardado em '{FICHEIRO_RELATORIO_JSON}'.")
     else:
@@ -1448,7 +1554,7 @@ def main():
 
     # 3. Guarda em PDF (se fpdf2 estiver disponível)
     if FPDF_DISPONIVEL:
-        sucesso_pdf, erro_pdf = gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, dados_abuseipdb, FICHEIRO_RELATORIO_PDF)
+        sucesso_pdf, erro_pdf = gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, dados_abuseipdb, parecer_ia, FICHEIRO_RELATORIO_PDF)
         if sucesso_pdf:
             print(f"[+] Relatório executivo em PDF guardado com sucesso em '{FICHEIRO_RELATORIO_PDF}'.\n")
         else:

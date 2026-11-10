@@ -83,7 +83,20 @@ A ferramenta integra-se com a API da **AbuseIPDB**:
 
 ---
 
-## 6. Eventos do Windows (Logs de Segurança)
+## 6. Explicação e Recomendações por IA (Google Gemini)
+
+Para apoiar analistas júnior de SOC ou acelerar a resposta a incidentes, a ferramenta pode submeter o resumo consolidado da análise à API do **Google Gemini** (usando o modelo `gemini-1.5-flash`).
+
+O Gemini atua como um **Analista de SOC Nível 3 (L3)**, fornecendo:
+1. **Diagnóstico da Ameaça**: explicação em linguagem clara do ataque em curso (ex.: identificação simultânea de força bruta no Active Directory e persistência via backdoor).
+2. **Avaliação de Risco**: impacto potencial nos ativos da empresa.
+3. **Plano de Ação Imediato**: recomendações práticas de contenção (ex.: bloqueio perimetral de IP, revogação de permissões da conta e auditoria de sessões ativas).
+
+A chave é configurada de forma segura na variável de ambiente `GEMINI_API_KEY` ou no ficheiro local `.env`. Se a chave não for fornecida, a ferramenta continua a operar normalmente.
+
+---
+
+## 7. Eventos do Windows (Logs de Segurança)
 
 No Windows, os eventos de auditoria são identificados por códigos numéricos chamados **Event IDs**:
 
@@ -113,7 +126,7 @@ No Windows, os eventos de auditoria são identificados por códigos numéricos c
 
 ---
 
-## 7. Mensagens do Linux (`auth.log` / `secure`)
+## 8. Mensagens do Linux (`auth.log` / `secure`)
 
 No Linux, o serviço OpenSSH (`sshd`) regista os acessos em texto:
 
@@ -127,7 +140,7 @@ No Linux, o serviço OpenSSH (`sshd`) regista os acessos em texto:
 
 ---
 
-## 8. Deteção Automática do Formato
+## 9. Deteção Automática do Formato
 
 A ferramenta lê as primeiras linhas do ficheiro e adapta-se automaticamente:
 1. **Ficheiro Vazio**: se o ficheiro estiver sem dados, emite um aviso seguro e amigável sem provocar erros no programa.

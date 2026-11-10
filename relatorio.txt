@@ -72,6 +72,11 @@ Regras de Deteção: Brute Force (5+ falhas/10m) | Password Spraying (4+ contas/
   [i] Enriquecimento externo desativado. Para ativar, defina a chave gratuita
       na variável de ambiente ABUSEIPDB_API_KEY ou num ficheiro .env local.
 
+10. ANÁLISE POR INTELIGÊNCIA ARTIFICIAL (GOOGLE GEMINI)
+-----------------------------------------------------------------
+  [i] Análise de IA desativada. Para ativar a explicação automática do Gemini,
+      defina a chave gratuita na variável GEMINI_API_KEY ou num ficheiro .env local.
+
 =================================================================
 Fim do relatório.
 =================================================================
