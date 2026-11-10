@@ -1,0 +1,45 @@
+=================================================================
+           RELATÓRIO DE ANÁLISE DE LOGS - SOC
+=================================================================
+Formato detetado: Linux (auth.log / sshd)
+Regra de Força Bruta: 5+ falhas em 10 minutos
+
+1. RESUMO GERAL
+-----------------------------------------------------------------
+  - Total de logins com falha:   33
+  - Total de logins com sucesso: 4
+  - Contas bloqueadas:           0
+
+2. TOP 5 UTILIZADORES COM MAIS FALHAS
+-----------------------------------------------------------------
+  1. Utilizador: admin                     | Falhas: 22
+  2. Utilizador: root                      | Falhas: 2
+  3. Utilizador: test                      | Falhas: 1
+  4. Utilizador: guest                     | Falhas: 1
+  5. Utilizador: suporte                   | Falhas: 1
+
+3. TOP 5 IPs DE ORIGEM COM MAIS FALHAS
+-----------------------------------------------------------------
+  1. IP: 203.0.113.199                     | Falhas: 21
+  2. IP: 198.51.100.77                     | Falhas: 11
+  3. IP: 192.168.1.200                     | Falhas: 1
+
+4. PADRÕES DE FORÇA BRUTA DETETADOS
+-----------------------------------------------------------------
+  [ALERTA - Gravidade: ALTO]
+    - IP de Origem:        203.0.113.199
+    - Falhas na Janela:    21 tentativas em <= 10 minutos
+    - Total de Falhas IP:  21
+    - Período do Ataque:   10/11/2026 11:15:02 até 10/11/2026 11:19:40
+    - Contas Visadas:      admin
+
+  [ALERTA - Gravidade: MÉDIO]
+    - IP de Origem:        198.51.100.77
+    - Falhas na Janela:    11 tentativas em <= 10 minutos
+    - Total de Falhas IP:  11
+    - Período do Ataque:   10/11/2026 11:00:10 até 10/11/2026 11:05:40
+    - Contas Visadas:      admin, test, root, guest, suporte e mais 5 contas
+
+=================================================================
+Fim do relatório.
+=================================================================

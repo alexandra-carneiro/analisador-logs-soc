@@ -1,0 +1,37 @@
+Nov 10 10:50:12 srv-linux sshd[2101]: Accepted password for joao from 192.168.1.50 port 52314 ssh2
+Nov 10 10:55:40 srv-linux sshd[2105]: Accepted password for maria from 192.168.1.60 port 52340 ssh2
+Nov 10 11:00:10 srv-linux sshd[2110]: Failed password for invalid user admin from 198.51.100.77 port 41201 ssh2
+Nov 10 11:00:35 srv-linux sshd[2112]: Failed password for invalid user test from 198.51.100.77 port 41205 ssh2
+Nov 10 11:01:05 srv-linux sshd[2114]: Failed password for root from 198.51.100.77 port 41210 ssh2
+Nov 10 11:01:40 srv-linux sshd[2116]: Failed password for invalid user guest from 198.51.100.77 port 41215 ssh2
+Nov 10 11:02:10 srv-linux sshd[2118]: Failed password for invalid user suporte from 198.51.100.77 port 41220 ssh2
+Nov 10 11:02:45 srv-linux sshd[2120]: Failed password for invalid user deploy from 198.51.100.77 port 41225 ssh2
+Nov 10 11:03:20 srv-linux sshd[2122]: Failed password for invalid user git from 198.51.100.77 port 41230 ssh2
+Nov 10 11:03:55 srv-linux sshd[2124]: Failed password for invalid user ansible from 198.51.100.77 port 41235 ssh2
+Nov 10 11:04:30 srv-linux sshd[2126]: Failed password for root from 198.51.100.77 port 41240 ssh2
+Nov 10 11:05:00 srv-linux sshd[2128]: Failed password for invalid user dev from 198.51.100.77 port 41245 ssh2
+Nov 10 11:05:40 srv-linux sshd[2130]: Failed password for invalid user backup from 198.51.100.77 port 41250 ssh2
+Nov 10 11:08:12 srv-linux sshd[2135]: Failed password for tiago from 192.168.1.200 port 48900 ssh2
+Nov 10 11:08:30 srv-linux sshd[2137]: Accepted password for tiago from 192.168.1.200 port 48905 ssh2
+Nov 10 11:15:02 srv-linux sshd[2201]: Failed password for invalid user admin from 203.0.113.199 port 53101 ssh2
+Nov 10 11:15:15 srv-linux sshd[2202]: Failed password for invalid user admin from 203.0.113.199 port 53102 ssh2
+Nov 10 11:15:28 srv-linux sshd[2203]: Failed password for invalid user admin from 203.0.113.199 port 53103 ssh2
+Nov 10 11:15:40 srv-linux sshd[2204]: Failed password for invalid user admin from 203.0.113.199 port 53104 ssh2
+Nov 10 11:15:52 srv-linux sshd[2205]: Failed password for invalid user admin from 203.0.113.199 port 53105 ssh2
+Nov 10 11:16:05 srv-linux sshd[2206]: Failed password for invalid user admin from 203.0.113.199 port 53106 ssh2
+Nov 10 11:16:18 srv-linux sshd[2207]: Failed password for invalid user admin from 203.0.113.199 port 53107 ssh2
+Nov 10 11:16:30 srv-linux sshd[2208]: Failed password for invalid user admin from 203.0.113.199 port 53108 ssh2
+Nov 10 11:16:42 srv-linux sshd[2209]: Failed password for invalid user admin from 203.0.113.199 port 53109 ssh2
+Nov 10 11:16:55 srv-linux sshd[2210]: Failed password for invalid user admin from 203.0.113.199 port 53110 ssh2
+Nov 10 11:17:10 srv-linux sshd[2211]: Failed password for invalid user admin from 203.0.113.199 port 53111 ssh2
+Nov 10 11:17:25 srv-linux sshd[2212]: Failed password for invalid user admin from 203.0.113.199 port 53112 ssh2
+Nov 10 11:17:40 srv-linux sshd[2213]: Failed password for invalid user admin from 203.0.113.199 port 53113 ssh2
+Nov 10 11:17:55 srv-linux sshd[2214]: Failed password for invalid user admin from 203.0.113.199 port 53114 ssh2
+Nov 10 11:18:10 srv-linux sshd[2215]: Failed password for invalid user admin from 203.0.113.199 port 53115 ssh2
+Nov 10 11:18:25 srv-linux sshd[2216]: Failed password for invalid user admin from 203.0.113.199 port 53116 ssh2
+Nov 10 11:18:40 srv-linux sshd[2217]: Failed password for invalid user admin from 203.0.113.199 port 53117 ssh2
+Nov 10 11:18:55 srv-linux sshd[2218]: Failed password for invalid user admin from 203.0.113.199 port 53118 ssh2
+Nov 10 11:19:10 srv-linux sshd[2219]: Failed password for invalid user admin from 203.0.113.199 port 53119 ssh2
+Nov 10 11:19:25 srv-linux sshd[2220]: Failed password for invalid user admin from 203.0.113.199 port 53120 ssh2
+Nov 10 11:19:40 srv-linux sshd[2221]: Failed password for invalid user admin from 203.0.113.199 port 53121 ssh2
+Nov 10 11:20:00 srv-linux sshd[2222]: Accepted password for carlos from 10.0.0.88 port 49500 ssh2
