@@ -3,7 +3,7 @@
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
 ![Security Focus](https://img.shields.io/badge/focus-SOC%20%7C%20Blue%20Team-red.svg)
 ![Threat Detection](https://img.shields.io/badge/detection-Brute%20Force%20%7C%20Password%20Spraying-darkred.svg)
-![Reports](https://img.shields.io/badge/reports-Terminal%20%7C%20TXT%20%7C%20PDF-success.svg)
+![Reports](https://img.shields.io/badge/reports-Terminal%20%7C%20TXT%20%7C%20PDF%20%7C%20JSON-success.svg)
 ![AI-Assisted](https://img.shields.io/badge/developed%20with-Google%20Antigravity%20%26%20Gemini-8E75C4.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-informational.svg)
@@ -37,8 +37,9 @@ Além disso, contabiliza os sucessos legítimos e lista detalhadamente as **cont
 - **Resiliente e Tolerante a Falhas**: lida com campos em branco, diferentes separadores (vírgula ou ponto e vírgula) e não falha perante ficheiros vazios.
 - **Relatório Executivo Multi-formato**:
   - 🖥️ **Terminal**: exibição formatada e legível no console.
-  - 📄 **Texto (`relatorio.txt`)**: saída em texto simples para auditoria ou integrações rápidas.
+  - 📄 **Texto (`relatorio.txt`)**: saída em texto simples para auditoria ou scripts.
   - 📊 **PDF Executivo (`relatorio.pdf`)**: gerado com `fpdf2`, com cabeçalho de SOC, tabelas de métricas e alertas coloridos por nível de gravidade (**Vermelho** para Alto, **Laranja** para Médio e **Azul** para Baixo).
+  - 🔌 **JSON Estruturado (`relatorio.json`)**: formato padronizado com esquema compatível para ingestão por SIEMs (Splunk, Elastic, Microsoft Sentinel) e automações SOAR.
 
 ---
 
@@ -175,7 +176,7 @@ As melhorias planeadas para o projeto, por ordem de construção:
 - [x] **2. Deteção de *Password Spraying***: identificação de muitas contas diferentes atacadas a partir do mesmo IP com poucas tentativas por conta (Python puro).
 - [x] **3. Mais IDs de Evento do Windows**: deteção de criação de conta (4720), adição a grupos privilegiados (4728) e privilégios especiais (4672).
 - [x] **4. Logons Fora de Horas**: identificação de acessos bem-sucedidos fora do expediente de trabalho habitual (horário normal configurável).
-- [ ] **5. Exportação em JSON**: gerar o relatório em formato JSON estruturado para ingestão por SIEMs (Splunk, Elastic, Microsoft Sentinel).
+- [x] **5. Exportação em JSON**: gerar o relatório em formato JSON estruturado para ingestão por SIEMs (Splunk, Elastic, Microsoft Sentinel).
 - [ ] **6. Enriquecimento de IPs com AbuseIPDB**: consulta automatizada à API gratuita para verificar a reputação e índice de confiança de maliciosidade do IP.
 - [ ] **7. Explicação por IA com Google Gemini**: resumo automático e geração de recomendações de mitigação e próximos passos via API do Gemini.
 - [ ] **8. Otimização de Performance com Pandas**: processamento em larga escala apenas quando os ficheiros de log atingirem gigabytes.
@@ -190,6 +191,7 @@ As melhorias planeadas para o projeto, por ordem de construção:
 ├── exemplo_auth.log       # Dados simulados do Linux (ataques SSH e acessos autorizados)
 ├── relatorio.txt          # Saída em texto gerada na execução
 ├── relatorio.pdf          # Relatório executivo em PDF gerado na execução
+├── relatorio.json         # Relatório estruturado gerado na execução (SIEM / SOAR)
 ├── requirements.txt       # Dependência opcional para geração de PDF (fpdf2)
 ├── COMO-FUNCIONA.md       # Guia didático para defesas e apresentações técnicas
 └── README.md              # Documentação completa do projeto

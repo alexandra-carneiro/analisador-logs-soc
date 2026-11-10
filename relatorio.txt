@@ -1,52 +1,71 @@
 =================================================================
            RELATÓRIO DE ANÁLISE DE LOGS - SOC
 =================================================================
-Formato detetado: Linux (auth.log / sshd)
+Formato detetado: Windows (CSV)
 Regras de Deteção: Brute Force (5+ falhas/10m) | Password Spraying (4+ contas/30m)
 
 1. RESUMO GERAL
 -----------------------------------------------------------------
-  - Total de logins com falha:   33
-  - Total de logins com sucesso: 5
-  - Contas bloqueadas (4740):    0
+  - Total de logins com falha:   31
+  - Total de logins com sucesso: 7
+  - Contas bloqueadas (4740):    2
   - Logons fora de horas:        1
+  - Contas criadas (4720):       1
+  - Adições a grupos priv. (4728):1
+  - Logons privilegiados (4672):  1
 
 2. TOP 5 UTILIZADORES COM MAIS FALHAS
 -----------------------------------------------------------------
-  1. Utilizador: admin                     | Falhas: 22
-  2. Utilizador: root                      | Falhas: 2
-  3. Utilizador: test                      | Falhas: 1
-  4. Utilizador: guest                     | Falhas: 1
-  5. Utilizador: suporte                   | Falhas: 1
+  1. Utilizador: administrador             | Falhas: 21
+  2. Utilizador: carlos                    | Falhas: 2
+  3. Utilizador: administrator             | Falhas: 1
+  4. Utilizador: admin                     | Falhas: 1
+  5. Utilizador: root                      | Falhas: 1
 
 3. TOP 5 IPs DE ORIGEM COM MAIS FALHAS
 -----------------------------------------------------------------
-  1. IP: 203.0.113.199                     | Falhas: 21
-  2. IP: 198.51.100.77                     | Falhas: 11
-  3. IP: 192.168.1.200                     | Falhas: 1
+  1. IP: 203.0.113.50                      | Falhas: 21
+  2. IP: 198.51.100.25                     | Falhas: 8
+  3. IP: 192.168.1.45                      | Falhas: 2
 
 4. PADRÕES DE FORÇA BRUTA (ATAQUE VERTICAL / CONCENTRADO)
 -----------------------------------------------------------------
   [ALERTA - Gravidade: ALTO]
-    - IP de Origem:        203.0.113.199
+    - IP de Origem:        203.0.113.50
     - Falhas na Janela:    21 tentativas em <= 10 minutos
     - Total de Falhas IP:  21
-    - Período do Ataque:   10/11/2026 11:15:02 até 10/11/2026 11:19:40
-    - Contas Visadas:      admin
+    - Período do Ataque:   10/11/2026 10:10:02 até 10/11/2026 10:14:30
+    - Contas Visadas:      administrador
 
 5. PADRÕES DE PASSWORD SPRAYING (DISPERSÃO DE CONTAS)
 -----------------------------------------------------------------
   [ALERTA - Gravidade: MÉDIO]
-    - IP de Origem:        198.51.100.77
-    - Contas Distintas:    10 contas visadas
-    - Média por Conta:     1.1 tentativas (spray horizontal)
-    - Total de Tentativas: 11
-    - Período do Ataque:   10/11/2026 11:00:10 até 10/11/2026 11:05:40
-    - Contas Visadas:      admin, test, root, guest, suporte, deploy e mais 4 contas
+    - IP de Origem:        198.51.100.25
+    - Contas Distintas:    8 contas visadas
+    - Média por Conta:     1.0 tentativas (spray horizontal)
+    - Total de Tentativas: 8
+    - Período do Ataque:   10/11/2026 10:02:15 até 10/11/2026 10:06:15
+    - Contas Visadas:      administrator, admin, root, guest, suporte, backup e mais 2 contas
+
+6. DETALHE DE CONTAS BLOQUEADAS (EVENTO 4740)
+-----------------------------------------------------------------
+  - Conta: administrador        | Hora: 10/11/2026 10:14:35  | Computador: SRV-AD01
+  - Conta: financeiro           | Hora: 10/11/2026 10:15:00  | Computador: SRV-AD01
+
+7. PERSISTÊNCIA E PRIVILÉGIOS (EVENTOS 4720, 4728, 4672)
+-----------------------------------------------------------------
+  [!] CONTAS DE UTILIZADOR CRIADAS (ID 4720 - Indicador de Persistência):
+    - Conta Criada: svc_temp_backdoor    | Hora: 10/11/2026 10:17:15  | Computador: SRV-AD01
+
+  [!] ADIÇÕES A GRUPOS PRIVILEGIADOS (ID 4728 - Elevação de Privilégios):
+    - Membro:       svc_temp_backdoor    | Hora: 10/11/2026 10:17:40  | Computador: SRV-AD01
+
+  [!] LOGONS COM SUPERPRIVILÉGIOS (ID 4672 - Administrador Especial):
+    - Conta:        svc_temp_backdoor    | Hora: 10/11/2026 10:18:05  | Computador: SRV-AD01
 
 8. LOGONS BEM-SUCEDIDOS FORA DE HORAS (SUSPEITOS)
 -----------------------------------------------------------------
-  - Conta: backup_admin         | IP: 198.51.100.88      | Hora: 10/11/2026 02:14:05 | Motivo: Fora do Expediente (02:14)
+  - Conta: tiago                | IP: 198.51.100.99      | Hora: 10/11/2026 03:22:10 | Motivo: Fora do Expediente (03:22)
 
 =================================================================
 Fim do relatório.

@@ -9,6 +9,7 @@ Suporta deteção de Força Bruta (ataque vertical) e Password Spraying (ataque 
 import sys
 import os
 import csv
+import json
 import re
 from datetime import datetime, timedelta
 from collections import Counter
@@ -48,6 +49,7 @@ CONSIDERAR_FIM_DE_SEMANA_FORA_DE_HORAS = True     # Sábados e domingos são con
 # Ficheiros onde os relatórios serão guardados
 FICHEIRO_RELATORIO_TXT = "relatorio.txt"
 FICHEIRO_RELATORIO_PDF = "relatorio.pdf"
+FICHEIRO_RELATORIO_JSON = "relatorio.json"
 
 
 # ==============================================================================
@@ -765,6 +767,49 @@ def salvar_relatorio_txt(texto_relatorio, caminho_saida=FICHEIRO_RELATORIO_TXT):
         return False, str(e)
 
 
+def salvar_relatorio_json(dados, alertas_brute_force, alertas_spray, caminho_saida=FICHEIRO_RELATORIO_JSON):
+    """
+    Grava os dados da análise num ficheiro JSON estruturado,
+    ideal para ingestão automatizada por SIEMs (Splunk, Elastic, Sentinel) ou SOARs.
+    """
+    try:
+        estrutura = {
+            "@timestamp": datetime.now().isoformat() + "Z",
+            "ferramenta": "analisador-logs-soc",
+            "formato_origem": dados["formato"],
+            "metricas_gerais": {
+                "total_falhas": dados["total_falhas"],
+                "total_sucessos": dados["total_sucessos"],
+                "total_bloqueios": dados["total_bloqueios"],
+                "total_logons_fora_de_horas": len(dados.get("logons_fora_de_horas", [])),
+                "total_contas_criadas": len(dados.get("contas_criadas", [])),
+                "total_adicoes_grupo_privilegiado": len(dados.get("membros_adicionados_grupo", [])),
+                "total_logons_superprivilegiados": len(dados.get("logons_privilegios_especiais", []))
+            },
+            "top_utilizadores_falhas": [
+                {"utilizador": u, "falhas": count} for u, count in dados["falhas_por_utilizador"].most_common(10)
+            ],
+            "top_ips_falhas": [
+                {"ip": ip, "falhas": count} for ip, count in dados["falhas_por_ip"].most_common(10)
+            ],
+            "alertas_forca_bruta": alertas_brute_force,
+            "alertas_password_spraying": alertas_spray,
+            "logons_fora_de_horas": dados.get("logons_fora_de_horas", []),
+            "contas_bloqueadas": dados.get("contas_bloqueadas", []),
+            "eventos_privilegios_windows": {
+                "contas_criadas": dados.get("contas_criadas", []),
+                "membros_adicionados_grupo": dados.get("membros_adicionados_grupo", []),
+                "logons_privilegios_especiais": dados.get("logons_privilegios_especiais", [])
+            }
+        }
+
+        with open(caminho_saida, mode="w", encoding="utf-8") as f:
+            json.dump(estrutura, f, indent=2, ensure_ascii=False)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
 # ==============================================================================
 # GERAÇÃO DO RELATÓRIO EM PDF (COM FPDF2 E CORES DE GRAVIDADE)
 # ==============================================================================
@@ -1218,7 +1263,14 @@ def main():
     else:
         print(f"[-] Erro ao guardar ficheiro .txt: {erro_txt}")
 
-    # 2. Guarda em PDF (se fpdf2 estiver disponível)
+    # 2. Guarda em JSON (estruturado para SIEMs e outras ferramentas)
+    sucesso_json, erro_json = salvar_relatorio_json(dados, alertas_brute_force, alertas_spray)
+    if sucesso_json:
+        print(f"[+] Relatório estruturado em JSON guardado em '{FICHEIRO_RELATORIO_JSON}'.")
+    else:
+        print(f"[-] Erro ao guardar ficheiro JSON: {erro_json}")
+
+    # 3. Guarda em PDF (se fpdf2 estiver disponível)
     if FPDF_DISPONIVEL:
         sucesso_pdf, erro_pdf = gerar_relatorio_pdf(dados, alertas_brute_force, alertas_spray, FICHEIRO_RELATORIO_PDF)
         if sucesso_pdf:
